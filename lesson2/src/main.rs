@@ -4,6 +4,9 @@ use std::io;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    if args.len() == 1 {
+        panic!("No parameter passed")
+    }
 
     let mut input = String::new();
     io::stdin()
@@ -19,6 +22,6 @@ fn main() {
     } else if args[1].as_str() == "slugify" {
         println!("{}", slugify(input))
     } else {
-        panic!("Invalid flag passed, `{}` isn't contained in -- `lowercase`,`uppercase`,`no-spaces`,`slugify`", args[1])
+        panic!("Invalid parameter passed, `{}` isn't contained in -- `lowercase`,`uppercase`,`no-spaces`,`slugify`", args[1])
     }
 }
