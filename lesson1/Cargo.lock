@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "rust-robot-dreams"
+name = "lesson1"
 version = "0.1.0"
