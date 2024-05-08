@@ -1,6 +1,6 @@
-use std::{ cmp::max, fmt };
 use ::csv::Reader;
-use csv::{ Error, StringRecord, StringRecordIter };
+use csv::StringRecordIter;
+use std::{ cmp::max, error::Error, fmt };
 
 type Row = Vec<String>;
 
@@ -9,29 +9,41 @@ pub struct Csv {
     rows: Vec<Row>,
 }
 
-fn trim_collect(row: StringRecordIter) -> Row {
-    row.map(|field| String::from(field.trim())).collect()
+fn to_trimmed_vector(iter: StringRecordIter) -> Row {
+    iter.map(|field| field.trim().to_string()).collect()
 }
+
+fn format_row(row: &Row, column_max_widths: &Vec<usize>) -> String {
+    row.iter()
+        .enumerate()
+        .map(|(index, header)| format!(" {:<width$} ", header, width = column_max_widths[index]))
+        .collect::<Row>()
+        .join("|")
+}
+
+fn push_ln(string: &mut String, line_content: String) {
+    string.push_str("\n");
+    string.push_str(&line_content)
+}
+
 impl Csv {
-    pub fn from(csv_string: &str) -> Csv {
+    pub fn from(csv_string: &str) -> Result<Csv, Box<dyn Error>> {
         let mut reader = Reader::from_reader(csv_string.as_bytes());
 
-        let headers = trim_collect(reader.headers().unwrap().iter());
-        let rows: Vec<Vec<String>> = reader
+        let headers = to_trimmed_vector(reader.headers()?.iter());
+        let rows: Vec<Row> = reader
             .records()
-            .map(|row| trim_collect(row.unwrap().iter()))
+            .filter_map(|row_result| row_result.ok().map(|row| to_trimmed_vector(row.iter())))
             .collect();
 
-        Csv { headers: headers, rows: rows }
+        Ok(Csv { headers: headers, rows: rows })
     }
+
     fn get_max_widths(&self) -> Vec<usize> {
-        self.headers
+        let mut column_max_widths: Vec<usize> = self.headers
             .iter()
             .map(|header| header.len())
-            .collect()
-    }
-    pub fn to_string(&self) -> String {
-        let mut column_max_widths: Vec<usize> = self.get_max_widths();
+            .collect();
 
         for row in &self.rows {
             for (index, field) in row.iter().enumerate() {
@@ -39,37 +51,24 @@ impl Csv {
             }
         }
 
-        let mut output = String::new();
+        column_max_widths
+    }
 
-        let headers_string = self.headers
-            .iter()
-            .enumerate()
-            .map(|(index, header)|
-                format!(" {:<width$} ", header, width = column_max_widths[index])
-            )
-            .collect::<Vec<String>>()
-            .join("|");
+    pub fn to_string(&self) -> String {
+        let column_max_widths: Vec<usize> = self.get_max_widths();
 
-        output.push_str(&headers_string);
+        let mut formatted_csv = String::new();
 
-        output.push_str("\n");
-        output.push_str(&"_".repeat(headers_string.len()));
+        let formatted_headers = format_row(&self.headers, &column_max_widths);
+        formatted_csv.push_str(&formatted_headers);
+
+        push_ln(&mut formatted_csv, "_".repeat(formatted_headers.len()));
 
         for row in &self.rows {
-            output.push_str("\n");
-            output.push_str(
-                &row
-                    .iter()
-                    .enumerate()
-                    .map(|(index, header)|
-                        format!(" {:<width$} ", header, width = column_max_widths[index])
-                    )
-                    .collect::<Vec<String>>()
-                    .join("|")
-            );
+            push_ln(&mut formatted_csv, format_row(row, &column_max_widths));
         }
 
-        output
+        formatted_csv
     }
 }
 

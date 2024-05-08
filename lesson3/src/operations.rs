@@ -21,5 +21,5 @@ pub fn slugify(input: String) -> Result<String, Box<dyn Error>> {
 pub fn csv(input: String) -> Result<String, Box<dyn Error>> {
     let csv = csv::Csv::from(&input);
 
-    Ok(csv.to_string())
+    Ok(csv?.to_string())
 }
