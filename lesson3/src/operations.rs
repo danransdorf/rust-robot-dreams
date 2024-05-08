@@ -1,4 +1,4 @@
-use std::{ error::Error };
+use std::{ cmp, error::Error };
 
 pub fn lowercase(input: String) -> Result<String, Box<dyn Error>> {
     Ok(input.to_lowercase())
@@ -17,80 +17,62 @@ pub fn slugify(input: String) -> Result<String, Box<dyn Error>> {
 }
 
 pub fn csv(input: String) -> Result<String, Box<dyn Error>> {
+    let mut reader = csv::Reader::from_reader(input.as_bytes());
+
+    let headers = reader
+        .headers()?
+        .iter()
+        .map(|field| String::from(field.trim()))
+        .collect::<Vec<String>>();
+
+    let rows: Vec<Vec<String>> = reader
+        .records()
+        .map(|row|
+            row
+                .unwrap()
+                .iter()
+                .map(|field| String::from(field.trim()))
+                .collect()
+        )
+        .collect();
+
+    let mut column_max_widths: Vec<usize> = headers
+        .iter()
+        .map(|header| header.len())
+        .collect();
+
+    for row in &rows {
+        for (index, field) in row.iter().enumerate() {
+            column_max_widths[index] = cmp::max(column_max_widths[index], field.len());
+        }
+    }
+
     let mut output = String::new();
 
-    if let Some((headers, data)) = input.split_once("\n") {
-        let headers_row: Vec<&str> = headers
-            .split(",")
-            .map(|header| header.trim())
-            .collect();
-        let number_of_columns = headers_row.len();
+    let headers_string = headers
+        .iter()
+        .enumerate()
+        .map(|(index, header)| format!(" {:<width$} ", header, width = column_max_widths[index]))
+        .collect::<Vec<String>>()
+        .join("|");
 
-        let mut column_max_widths: Vec<usize> = headers_row
-            .clone()
-            .into_iter()
-            .map(|header| header.len())
-            .collect();
+    output.push_str(&headers_string);
 
-        let mut rows: Vec<Vec<String>> = Vec::new();
-        let mut rdr = csv::Reader::from_reader(input.as_bytes());
-        for result in rdr.records() {
-            let row = result?;
+    output.push_str("\n");
+    output.push_str(&"_".repeat(headers_string.len()));
 
-            row.iter()
-                .map(|field| field.trim().len())
-                .enumerate()
-                .for_each(|(index, field_length)| {
-                    column_max_widths[index] = std::cmp::max(
-                        column_max_widths[index],
-                        field_length
-                    );
-                });
-
-            rows.push(
-                row
-                    .iter()
-                    .map(|field| field.trim().to_string())
-                    .collect::<Vec<String>>()
-            );
-        }
-
-        output.push_str(
-            &headers_row
-                .iter()
-                .enumerate()
-                .map(|(index, field)|
-                    format!(" {:<width$} ", field, width = column_max_widths[index])
-                )
-                .collect::<Vec<String>>()
-                .join("")
-        );
+    for row in &rows {
         output.push_str("\n");
         output.push_str(
-            &"_".repeat(
-                column_max_widths
-                    .iter()
-                    .map(|&x| x)
-                    .reduce(|a, b| a + b)
-                    .unwrap_or(0 as usize) +
-                    number_of_columns * 2 // Every column is padded with a space from each side
-            )
+            &row
+                .iter()
+                .enumerate()
+                .map(|(index, header)|
+                    format!(" {:<width$} ", header, width = column_max_widths[index])
+                )
+                .collect::<Vec<String>>()
+                .join("|")
         );
-        for row in rows {
-            output.push_str("\n");
-            output.push_str(
-                &row
-                    .iter()
-                    .enumerate()
-                    .map(|(index, field)|
-                        format!(" {:<width$} ", field, width = column_max_widths[index])
-                    )
-                    .collect::<Vec<String>>()
-                    .join("")
-            );
-        }
-    } else {
-        eprintln!("Only one line was passed, parsed input: {}", input);
     }
 
     Ok(output)
