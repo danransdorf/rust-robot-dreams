@@ -1,5 +1,5 @@
 use ::csv::Reader;
-use csv::StringRecordIter;
+use csv::{ StringRecord, StringRecordIter };
 use std::{ cmp::max, error::Error, fmt };
 
 type Row = Vec<String>;
@@ -9,8 +9,10 @@ pub struct Csv {
     rows: Vec<Row>,
 }
 
-fn to_trimmed_vector(iter: StringRecordIter) -> Row {
-    iter.map(|field| field.trim().to_string()).collect()
+fn to_trimmed_vector(row: &StringRecord) -> Row {
+    row.iter()
+        .map(|field| field.trim().to_string())
+        .collect()
 }
 
 fn format_row(row: &Row, column_max_widths: &Vec<usize>) -> String {
@@ -30,10 +32,10 @@ impl Csv {
     pub fn from(csv_string: &str) -> Result<Csv, Box<dyn Error>> {
         let mut reader = Reader::from_reader(csv_string.as_bytes());
 
-        let headers = to_trimmed_vector(reader.headers()?.iter());
+        let headers = to_trimmed_vector(reader.headers()?);
         let rows: Vec<Row> = reader
             .records()
-            .filter_map(|row_result| row_result.ok().map(|row| to_trimmed_vector(row.iter())))
+            .filter_map(|row_result| row_result.ok().map(|row| to_trimmed_vector(&row)))
             .collect();
 
         Ok(Csv { headers: headers, rows: rows })
