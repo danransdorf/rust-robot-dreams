@@ -1,5 +1,4 @@
-use ::csv::Reader;
-use csv::{ StringRecord };
+use csv::{Reader, StringRecord};
 use std::{ cmp::max, error::Error, fmt };
 
 type Row = Vec<String>;
