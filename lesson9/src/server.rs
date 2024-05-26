@@ -1,12 +1,19 @@
 use std::{
     collections::HashMap,
-    net::{SocketAddr, TcpListener, TcpStream},
-    sync::{Arc, Mutex},
+    net::{ SocketAddr, TcpListener, TcpStream },
+    sync::{ Arc, Mutex },
+    thread,
 };
 
-use crate::utils::*;
+mod utils;
+use utils::*;
 
-pub fn start(address: String) {
+fn main() {
+    let address = get_address();
+    start(address)
+}
+
+fn start(address: String) {
     println!("Creating a server on address: {}", address);
 
     let listener = TcpListener::bind(address).unwrap();
@@ -15,39 +22,38 @@ pub fn start(address: String) {
     for stream in listener.incoming() {
         let stream = stream.unwrap();
         let client_addr = stream.peer_addr().unwrap();
-
         let clients_clone = Arc::clone(&clients);
-        clients
-            .lock()
-            .unwrap()
-            .insert(client_addr, stream.try_clone().unwrap());
+        clients.lock().unwrap().insert(client_addr, stream.try_clone().unwrap());
 
         println!("Stream opened (addr: {})", client_addr);
 
-        std::thread::spawn(move || loop {
-            match handle_stream(&stream) {
-                Ok(message_data) => {
-                    let serialized_string = match serialize_data(message_data) {
-                        Ok(string) => string,
-                        _ => {
-                            eprintln!("Unable to serialize object");
-                            continue;
-                        }
-                    };
-                    for (addr, client_stream) in clients_clone.lock().unwrap().iter() {
-                        if *addr != client_addr {
-                            write_into_stream(client_stream, &serialized_string);
+        thread::spawn(move || {
+            loop {
+                match handle_stream(&stream) {
+                    Ok(message_data) => {
+                        let serialized_string = match serialize_data(message_data) {
+                            Ok(string) => string,
+                            _ => {
+                                eprintln!("Unable to serialize object");
+                                continue;
+                            }
+                        };
+                        for (addr, client_stream) in clients_clone.lock().unwrap().iter() {
+                            if *addr != client_addr {
+                                write_into_stream(client_stream, &serialized_string);
+                            }
                         }
                     }
+                    Err(e) =>
+                        match e {
+                            StreamError::StreamClosed => {
+                                eprintln!("Stream has been closed (addr: {})", &client_addr);
+                                clients_clone.lock().unwrap().remove(&client_addr);
+                                break;
+                            }
+                            _ => handle_stream_error(e),
+                        }
                 }
-                Err(e) => match e {
-                    StreamError::StreamClosed => {
-                        eprintln!("Stream has been closed (addr: {})", &client_addr);
-                        clients_clone.lock().unwrap().remove(&client_addr);
-                        break;
-                    }
-                    _ => handle_stream_error(e),
-                },
             }
         });
     }
