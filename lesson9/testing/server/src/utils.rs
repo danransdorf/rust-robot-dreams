@@ -1,11 +1,7 @@
-use std::{
-    fs::File,
-    io::{ stdout, Error, ErrorKind, Read, Write },
-    net::TcpStream,
-    time::{ SystemTime, UNIX_EPOCH },
-};
+use std::{ fs::File, io::{ stdout, Error, ErrorKind, Read, Write }, net::TcpStream };
 
 use serde::{ Deserialize, Serialize };
+use chrono::Local;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum MessageData {
@@ -36,6 +32,21 @@ pub fn handle_stream_error(e: StreamError) {
     }
 }
 
+pub fn get_address() -> String {
+    let args: Vec<String> = std::env::args().collect();
+
+    match args.len() {
+        3 => format!("{}:{}", args.get(2).unwrap(), args.get(1).unwrap()),
+        2 => format!("localhost:{}", args.get(1).unwrap()),
+        1 => String::from("localhost:11111"),
+        _ => {
+            panic!(
+                "Please specify `client` or `server` using command line arguments. Command line arguments expected: <client/server> <port> <hostname>"
+            )
+        }
+    }
+}
+
 pub fn flush(message: &str) {
     writeln!(&mut stdout(), "{}", message).expect("Failed to write to output");
     stdout().flush().expect("Failed to flush output");
@@ -56,9 +67,10 @@ pub fn deserialize_data(data: Vec<u8>) -> Result<MessageData, bincode::Error> {
     bincode::deserialize(&data)
 }
 
+static SECONDS_INDEX: usize = 19;
 pub fn save_image(bytes: &Vec<u8>) -> Result<String, StreamError> {
-    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    let filename = format!("{:?}.png", timestamp);
+    let timestamp = &Local::now().to_string()[..SECONDS_INDEX];
+    let filename = format!("{}.png", timestamp);
 
     if let Err(e) = std::fs::create_dir_all("images") {
         return Err(StreamError::FileCreationError(e));

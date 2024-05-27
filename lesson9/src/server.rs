@@ -27,6 +27,7 @@ fn start(address: String) {
 
         println!("Stream opened (addr: {})", client_addr);
 
+        // I'll use Tokio in the future
         thread::spawn(move || {
             loop {
                 match handle_stream(&stream) {
