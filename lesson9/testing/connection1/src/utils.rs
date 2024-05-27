@@ -3,34 +3,16 @@ use std::{ fs::File, io::{ stdout, Error, ErrorKind, Read, Write }, net::TcpStre
 use serde::{ Deserialize, Serialize };
 use chrono::Local;
 
-#[derive(Serialize, Deserialize, Debug)]
+pub mod errors;
+use errors::{handle_stream_error, StreamError};
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MessageData {
     Image(Vec<u8>),
     File(String, Vec<u8>),
     Text(String),
 }
-pub enum StreamError {
-    ReadMessageError(Error),
-    StreamClosed,
-    FileCreationError(Error),
-    FileWriteError(Error),
-}
 
-pub fn invalid_input_error(error: &'static str) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::InvalidInput, error)
-}
-
-pub fn handle_stream_error(e: StreamError) {
-    match e {
-        StreamError::ReadMessageError(e) => eprintln!("Failed to read message: {}", e),
-        StreamError::StreamClosed => {
-            eprintln!("Stream has been closed");
-            std::process::exit(0x0100);
-        }
-        StreamError::FileCreationError(e) => eprintln!("Failed to create a file: {}", e),
-        StreamError::FileWriteError(e) => eprintln!("Failed to create a file: {}", e),
-    }
-}
 
 pub fn get_address() -> String {
     let args: Vec<String> = std::env::args().collect();
@@ -52,13 +34,6 @@ pub fn flush(message: &str) {
     stdout().flush().expect("Failed to flush output");
 }
 
-pub fn write_into_stream(mut stream: &TcpStream, content: &[u8]) {
-    let len_bytes = (content.len() as u32).to_be_bytes();
-
-    stream.write(&len_bytes).expect("Failed to write length bytes");
-    stream.write_all(content).expect("Failed to write content");
-}
-
 pub fn serialize_data(data: MessageData) -> Result<Vec<u8>, bincode::Error> {
     bincode::serialize(&data)
 }
@@ -72,74 +47,68 @@ pub fn save_image(bytes: &Vec<u8>) -> Result<String, StreamError> {
     let timestamp = &Local::now().to_string()[..SECONDS_INDEX];
     let filename = format!("{}.png", timestamp);
 
-    if let Err(e) = std::fs::create_dir_all("images") {
-        return Err(StreamError::FileCreationError(e));
-    }
-    let file = File::create(&format!("images/{filename}"));
+    std::fs::create_dir_all("images").map_err(StreamError::FileCreationError)?;
 
-    match file {
-        Err(e) => {
-            return Err(StreamError::FileCreationError(e));
-        }
-        Ok(mut file) => {
-            if let Err(e) = file.write_all(&bytes) {
-                return Err(StreamError::FileWriteError(e));
-            }
-        }
-    }
+    let mut file = File::create(&format!("images/{filename}")).map_err(
+        StreamError::FileCreationError
+    )?;
+    file.write_all(&bytes).map_err(StreamError::FileWriteError)?;
 
     Ok(filename)
 }
 
 pub fn save_file(filename: &str, bytes: &Vec<u8>) -> Result<String, StreamError> {
-    if let Err(e) = std::fs::create_dir_all("files") {
-        return Err(StreamError::FileCreationError(e));
-    }
-    let file_res = File::create(&format!("files/{filename}"));
+    std::fs::create_dir_all("files").map_err(StreamError::FileCreationError)?;
 
-    match file_res {
-        Err(e) => {
-            return Err(StreamError::FileCreationError(e));
-        }
-        Ok(mut file) => {
-            if let Err(e) = file.write_all(&bytes) {
-                return Err(StreamError::FileWriteError(e));
-            }
-        }
-    }
+    let mut file = File::create(&format!("files/{filename}")).map_err(
+        StreamError::FileCreationError
+    )?;
+    file.write_all(&bytes).map_err(StreamError::FileWriteError)?;
 
     Ok(filename.to_string())
 }
 
-pub fn handle_stream(mut stream: &TcpStream) -> Result<MessageData, StreamError> {
-    let mut len_buffer = [0; 4];
-
-    if stream.read_exact(&mut len_buffer).is_err() {
-        return Err(StreamError::StreamClosed);
-    }
-
-    let len = u32::from_be_bytes(len_buffer);
-    let mut buffer = vec![0; len as usize];
-    if let Err(e) = stream.read_exact(&mut buffer) {
-        return Err(StreamError::ReadMessageError(e));
-    }
-
-    let message_data = deserialize_data(buffer).map_err(|_| {
-        StreamError::ReadMessageError(Error::new(ErrorKind::InvalidData, "Failed to deserialize"))
-    })?;
-    match &message_data {
+pub fn output_message_data(message_data: &MessageData) {
+    match message_data {
         MessageData::File(filename, bytes) => {
-            let filename = save_file(filename, bytes)?;
-            flush(&format!("Received file: {filename}"));
+            match save_file(filename, bytes) {
+                Ok(filename) => flush(&format!("Received file: {filename}")),
+                Err(e) => {
+                    flush("Received file, but failed to save it");
+                    handle_stream_error(e)
+                }
+            };
         }
         MessageData::Image(bytes) => {
-            let filename = save_image(bytes)?;
-            flush(&format!("Received image: {filename}"));
+            match save_image(bytes) {
+                Ok(filename) => flush(&format!("Received image: {filename}")),
+                Err(e) => {
+                    flush("Received image, but failed to save it");
+                    handle_stream_error(e)
+                }
+            };
         }
         MessageData::Text(string) => {
             flush(&format!("Received message: {string}"));
         }
     }
+}
+
+// This function is used in client.rs, Rust just doesn't notice it I guess
+#[allow(dead_code)]
+pub fn handle_stream(mut stream: &TcpStream) -> Result<MessageData, StreamError> {
+    let mut len_buffer = [0; 4];
+
+    stream.read_exact(&mut len_buffer).map_err(|_| StreamError::StreamClosed)?;
+
+    let len = u32::from_be_bytes(len_buffer);
+    let mut buffer = vec![0; len as usize];
+    stream.read_exact(&mut buffer).map_err(StreamError::ReadMessageError)?;
+
+    let message_data = deserialize_data(buffer).map_err(|_| {
+        StreamError::ReadMessageError(Error::new(ErrorKind::InvalidData, "Failed to deserialize"))
+    })?;
+    output_message_data(&message_data);
 
     Ok(message_data)
 }

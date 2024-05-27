@@ -2,7 +2,8 @@ use std::{ fs::File, io::{ Cursor, Error, Read, Write }, net::TcpStream, path::P
 
 use image::ImageFormat;
 
-use super::{ invalid_input_error, serialize_data, MessageData };
+use crate::utils::{ serialize_data, MessageData };
+use crate::utils::errors::invalid_input_error;
 
 fn get_image(path: &Path) -> Result<MessageData, Error> {
     let img = match image::open(path) {
