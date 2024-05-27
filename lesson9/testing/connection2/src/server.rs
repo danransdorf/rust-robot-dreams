@@ -3,7 +3,7 @@ use std::{ collections::HashMap, io::ErrorKind, net::SocketAddr, sync::Arc };
 use tokio;
 use tokio::net::{ TcpListener, TcpStream };
 use tokio::sync::Mutex;
-use tokio::io::{ AsyncReadExt, AsyncWriteExt };
+use tokio::io::{ self, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf };
 
 mod utils;
 use utils::errors::{ handle_stream_error, write_stream_error, StreamError };
@@ -15,8 +15,8 @@ async fn main() {
     start_server(address).await
 }
 
-type StreamArc = Arc<Mutex<TcpStream>>;
-type StreamsHashMap = HashMap<SocketAddr, StreamArc>;
+type WriteHalfArc = Arc<Mutex<WriteHalf<TcpStream>>>;
+type StreamsHashMap = HashMap<SocketAddr, WriteHalfArc>;
 
 async fn start_server(address: String) {
     println!("Creating a server on address: {}", address);
@@ -26,9 +26,11 @@ async fn start_server(address: String) {
     let clients: Arc<Mutex<StreamsHashMap>> = Arc::new(Mutex::new(HashMap::new()));
     loop {
         let (stream, client_addr) = listener.accept().await.unwrap();
-        let stream = Arc::new(Mutex::new(stream));
+        let (rd, wr) = io::split(stream);
+        let reader = Arc::new(Mutex::new(rd));
+        let writer = Arc::new(Mutex::new(wr));
 
-        clients.lock().await.insert(client_addr, Arc::clone(&stream));
+        clients.lock().await.insert(client_addr, Arc::clone(&writer));
 
         println!("Stream opened (addr: {})", client_addr);
 
@@ -36,7 +38,7 @@ async fn start_server(address: String) {
         let clients_clone = Arc::clone(&clients);
         tokio::spawn(async move {
             loop {
-                match handle_stream(&stream).await {
+                match handle_stream(&reader).await {
                     Ok(message_data) => {
                         let serialized_string = match serialize_data(message_data) {
                             Ok(string) => string,
@@ -46,14 +48,15 @@ async fn start_server(address: String) {
                             }
                         };
 
-                        for (addr, client_stream) in clients_clone.lock().await.iter() {
+                        for (addr, client_writer) in clients_clone.lock().await.iter() {
                             if *addr != client_addr {
-                                let client_stream = client_stream.clone();
+                                let client_writer = client_writer.clone();
                                 let serialized_string = serialized_string.clone();
+
                                 tokio::spawn(async move {
-                                    write_into_stream(&client_stream, &serialized_string).await
+                                    write_into_stream(&client_writer, &serialized_string).await
                                         .map_err(write_stream_error)
-                                        .ok()
+                                        .ok();
                                 });
                             }
                         }
@@ -73,28 +76,33 @@ async fn start_server(address: String) {
     }
 }
 
-async fn write_into_stream(stream: &Arc<Mutex<TcpStream>>, content: &[u8]) -> std::io::Result<()> {
+async fn write_into_stream(
+    writer: &Arc<Mutex<WriteHalf<TcpStream>>>,
+    content: &[u8]
+) -> std::io::Result<()> {
     let len_bytes = (content.len() as u32).to_be_bytes();
 
-    let mut locked_stream = stream.lock().await;
-    locked_stream.write(&len_bytes).await?;
-    locked_stream.write_all(content).await?;
+    let mut locked_writer = writer.lock().await;
+    locked_writer.write(&len_bytes).await?;
+    locked_writer.write_all(content).await?;
 
     Ok(())
 }
 
-async fn handle_stream(stream: &Arc<Mutex<TcpStream>>) -> Result<MessageData, StreamError> {
-    let mut locked_stream = stream.lock().await;
+async fn handle_stream(
+    reader: &Arc<Mutex<ReadHalf<TcpStream>>>
+) -> Result<MessageData, StreamError> {
+    let mut locked_reader = reader.lock().await;
 
     let mut len_buffer = [0; 4];
-    locked_stream.read_exact(&mut len_buffer).await.map_err(|_| StreamError::StreamClosed)?;
+    locked_reader.read_exact(&mut len_buffer).await.map_err(|_| StreamError::StreamClosed)?;
 
     let len = u32::from_be_bytes(len_buffer);
 
     let mut buffer = vec![0; len as usize];
-    locked_stream.read_exact(&mut buffer).await.map_err(StreamError::ReadMessageError)?;
+    locked_reader.read_exact(&mut buffer).await.map_err(StreamError::ReadMessageError)?;
 
-    drop(locked_stream); // Manually drop just to be sure
+    drop(locked_reader); // Manually drop just to be sure
 
     let message_data = deserialize_data(buffer).map_err(|_| {
         StreamError::ReadMessageError(Error::new(ErrorKind::InvalidData, "Failed to deserialize"))
