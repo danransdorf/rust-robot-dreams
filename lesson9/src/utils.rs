@@ -22,8 +22,9 @@ pub fn get_address() -> String {
         2 => format!("localhost:{}", args.get(1).unwrap()),
         1 => String::from("localhost:11111"),
         _ => {
+            // Teď zpětně koukám, že by tu měl být unreachable!() nebo jinej panic message, tenhle panic message jsem tam omylem nechal z jiné verze.
             panic!(
-                "Please specify `client` or `server` using command line arguments. Command line arguments expected: <client/server> <port> <hostname>"
+                "Please specify `client` or `server` using command line arguments. Command line arguments expected: <client/server> <port> <hostname>" 
             )
         }
     }
