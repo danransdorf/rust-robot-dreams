@@ -1,8 +1,4 @@
-### Run client
+### Built executable args
 ```bash
-cargo run --bin client -- <args>
-```
-### Run server
-```bash
-cargo run --bin server -- <args>
+--port <port> --hostname <hostname>
 ```

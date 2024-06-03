@@ -1,9 +1,10 @@
 use std::{ fs::File, io::{ stdout, Error, ErrorKind, Read, Write }, net::TcpStream };
 
+use clap::{ arg, command, Parser };
 use serde::{ Deserialize, Serialize };
 use chrono::Local;
 
-use crate::errors::{handle_stream_error, StreamError};
+use crate::errors::{ handle_stream_error, StreamError };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MessageData {
@@ -12,20 +13,20 @@ pub enum MessageData {
     Text(String),
 }
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(long, default_value = "localhost")]
+    hostname: String,
+
+    #[arg(long, default_value = "11111")]
+    port: String,
+}
 
 pub fn get_address() -> String {
-    let args: Vec<String> = std::env::args().collect();
+    let args = Args::parse();
 
-    match args.len() {
-        3 => format!("{}:{}", args.get(2).unwrap(), args.get(1).unwrap()),
-        2 => format!("localhost:{}", args.get(1).unwrap()),
-        1 => String::from("localhost:11111"),
-        _ => {
-            panic!(
-                "Please specify `client` or `server` using command line arguments. Command line arguments expected: <client/server> <port> <hostname>"
-            )
-        }
-    }
+    format!("{}:{}", args.hostname, args.port)
 }
 
 pub fn flush(message: &str) {
