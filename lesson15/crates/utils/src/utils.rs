@@ -17,6 +17,37 @@ pub enum MessageData {
     Text(String),
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct StreamMessage {
+    pub jwt: String,
+    pub message: MessageData,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum AuthRequestKind {
+    Login,
+    Register,
+}
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AuthRequest {
+    pub kind: AuthRequestKind,
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ReadRequest {
+    pub jwt: String,
+    pub amount: i32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum StreamArrival {
+    StreamMessage(StreamMessage),
+    AuthRequest(AuthRequest),
+    ReadRequest(ReadRequest)
+}
+
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -41,9 +72,15 @@ pub fn flush(message: &str) {
 pub fn serialize_data(data: MessageData) -> Result<Vec<u8>, bincode::Error> {
     bincode::serialize(&data)
 }
-
 pub fn deserialize_data(data: Vec<u8>) -> Result<MessageData, bincode::Error> {
     bincode::deserialize(&data)
+}
+
+pub fn serialize_stream(stream: StreamArrival) -> Result<Vec<u8>, bincode::Error> {
+    bincode::serialize(&stream)
+}
+pub fn deserialize_stream(stream: Vec<u8>) -> Result<StreamArrival, bincode::Error> {
+    bincode::deserialize(&stream)
 }
 
 static SECONDS_INDEX: usize = 19;

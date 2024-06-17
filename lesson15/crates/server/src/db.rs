@@ -65,6 +65,17 @@ impl DB {
 
         Ok(new_user)
     }
+    pub fn get_user_id(&self, username: &str) -> Result<i32> {
+        use schema::users::dsl::{username as username_field, users as users_table};
+
+        let mut conn = self.pool.get().map_err(|_| DBError::ConnectionError)?;
+        let user: User = users_table
+            .filter(username_field.eq(username))
+            .first(&mut conn)
+            .map_err(|_| DBError::UserNotFoundError)?;
+
+        Ok(user.id)
+    }
 
     pub fn check_password(&self, username: &str, password: &str) -> Result<bool> {
         use schema::users::dsl::{username as username_field, users as users_table};
