@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::io::Error;
 use thiserror::Error;
 
@@ -60,3 +61,54 @@ pub fn write_stream_error(e: Error) {
     eprintln!("Write to stream failed: {}", e)
 }
  */
+
+
+#[derive(Serialize, Deserialize, Debug, Clone, Error)]
+pub enum DBError {
+    #[error("Failed to create DB pool")]
+    PoolCreationError,
+    #[error("Failed to get connection from pool")]
+    ConnectionError,
+    #[error("Failed to insert into users table")]
+    UserInsertionError,
+    #[error("Failed to insert into messages table")]
+    MessageInsertionError,
+    #[error("Message not found")]
+    MessageNotFoundError,
+    #[error("Failed to load messages, the database may not contain so many")]
+    MessageHistoryError,
+    #[error("User not found")]
+    UserNotFoundError,
+    #[error("Failed to verify password")]
+    PasswordVerificationError,
+}
+
+impl DBError {
+    pub fn serialize(&self) -> Vec<u8> {
+        bincode::serialize(self).unwrap()
+    }
+    pub fn from_bytes(data: &[u8]) -> Self {
+        bincode::deserialize(data).unwrap()
+    }
+}
+
+#[derive(Error, Debug, Serialize, Deserialize, Clone)]
+pub enum ServerError {
+    #[error("Invalid token")]
+    InvalidToken,
+    #[error("Unable to serialize object")]
+    SerializeObjectError,
+    #[error("Invalid credentials")]
+    InvalidCredentials,
+    #[error("Username is used")]
+    UsernameUsed,
+}
+
+impl ServerError {
+    pub fn serialize(&self) -> Vec<u8> {
+        bincode::serialize(self).unwrap()
+    }
+    pub fn from_bytes(data: &[u8]) -> Self {
+        bincode::deserialize(data).unwrap()
+    }
+}

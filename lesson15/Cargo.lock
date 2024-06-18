@@ -1372,6 +1372,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bcrypt",
+ "bincode",
  "diesel",
  "jsonwebtoken",
  "rand",

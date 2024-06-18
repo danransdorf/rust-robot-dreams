@@ -3,12 +3,11 @@ use diesel::prelude::*;
 use diesel::r2d2::{self, ConnectionManager};
 use diesel::sqlite::SqliteConnection;
 use rand::RngCore;
+use utils::errors::DBError;
 use utils::{serialize_data, MessageData};
 
 mod schema;
 use schema::{messages as messages_schema, users as users_schema};
-mod errors;
-use errors::DBError;
 
 static DB_PATH: &'static str = "chat.db";
 
@@ -29,7 +28,13 @@ macro_rules! diesel_struct {
     };
 }
 
-diesel_struct!(User, users_schema, username: String, password: String, salt: Vec<u8>);
+diesel_struct!(
+    User,
+    users_schema,
+    username: String,
+    password: String,
+    salt: Vec<u8>
+);
 diesel_struct!(Message, messages_schema, user_id: i32, content: Vec<u8>);
 
 type SqlitePool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
@@ -77,7 +82,7 @@ impl DB {
         Ok(user.id)
     }
 
-    pub fn check_password(&self, username: &str, password: &str) -> Result<bool> {
+    pub fn check_password(&self, username: &str, password: &str) -> Result<bool, DBError> {
         use schema::users::dsl::{username as username_field, users as users_table};
 
         let mut conn = self.pool.get().map_err(|_| DBError::ConnectionError)?;

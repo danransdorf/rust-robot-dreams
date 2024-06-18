@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{stdout, Error, ErrorKind, Read, Write},
+    io::{stdin, stdout, Error, ErrorKind, Read, Write},
     net::TcpStream,
 };
 
@@ -8,7 +8,7 @@ use chrono::Local;
 use clap::{arg, command, Parser};
 use serde::{Deserialize, Serialize};
 
-use crate::errors::{handle_stream_error, StreamError};
+use crate::errors::{handle_stream_error, DBError, ServerError, StreamError};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum MessageData {
@@ -18,9 +18,26 @@ pub enum MessageData {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ErrorResponse {
+    DBError(DBError),
+    ServerError(ServerError),
+}
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ServerResponse {
+    Message(MessageData),
+    AuthToken(String),
+    Error(ErrorResponse),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct StreamMessage {
     pub jwt: String,
     pub message: MessageData,
+}
+impl StreamMessage {
+    pub fn new(jwt: String, message: MessageData) -> Self {
+        StreamMessage { jwt, message }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -28,11 +45,33 @@ pub enum AuthRequestKind {
     Login,
     Register,
 }
+
+impl AuthRequestKind {
+    pub fn from_stdin() -> Self {
+        let mut input = String::new();
+        stdin().read_line(&mut input).unwrap();
+
+        match input.trim() {
+            "r" | "R" => AuthRequestKind::Register,
+            _ => AuthRequestKind::Login,
+        }
+    }
+}
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AuthRequest {
     pub kind: AuthRequestKind,
     pub username: String,
     pub password: String,
+}
+
+impl AuthRequest {
+    pub fn new(kind: AuthRequestKind, username: String, password: String) -> Self {
+        AuthRequest {
+            kind,
+            username,
+            password,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -45,7 +84,7 @@ pub struct ReadRequest {
 pub enum StreamArrival {
     StreamMessage(StreamMessage),
     AuthRequest(AuthRequest),
-    ReadRequest(ReadRequest)
+    ReadRequest(ReadRequest),
 }
 
 #[derive(Parser, Debug)]
@@ -73,6 +112,13 @@ pub fn serialize_data(data: MessageData) -> Result<Vec<u8>, bincode::Error> {
     bincode::serialize(&data)
 }
 pub fn deserialize_data(data: Vec<u8>) -> Result<MessageData, bincode::Error> {
+    bincode::deserialize(&data)
+}
+
+pub fn serialize_server_response(data: ServerResponse) -> Result<Vec<u8>, bincode::Error> {
+    bincode::serialize(&data)
+}
+pub fn deserialize_server_response(data: Vec<u8>) -> Result<ServerResponse, bincode::Error> {
     bincode::deserialize(&data)
 }
 
@@ -135,25 +181,6 @@ pub fn output_message_data(message_data: &MessageData) {
     }
 }
 
-// This function is used in client.rs, Rust just doesn't notice it I guess
-#[allow(dead_code)]
-pub fn handle_stream(mut stream: &TcpStream) -> Result<MessageData, StreamError> {
-    let mut len_buffer = [0; 4];
-
-    stream
-        .read_exact(&mut len_buffer)
-        .map_err(|_| StreamError::StreamClosed)?;
-
-    let len = u32::from_be_bytes(len_buffer);
-    let mut buffer = vec![0; len as usize];
-    stream
-        .read_exact(&mut buffer)
-        .map_err(StreamError::ReadMessageError)?;
-
-    let message_data = deserialize_data(buffer).map_err(|_| {
-        StreamError::ReadMessageError(Error::new(ErrorKind::InvalidData, "Failed to deserialize"))
-    })?;
-    output_message_data(&message_data);
-
-    Ok(message_data)
+pub fn unspecified_error() -> Result<(), std::io::Error> {
+    return Err(std::io::Error::new(std::io::ErrorKind::Other, ""));
 }

@@ -7,8 +7,8 @@ use std::{
 
 use image::ImageFormat;
 
-use crate::errors::invalid_input_error;
-use crate::utils::{serialize_data, MessageData};
+use crate::{errors::invalid_input_error, serialize_stream, StreamArrival};
+use crate::{utils::MessageData, StreamMessage};
 
 fn get_image(path: &Path) -> Result<MessageData, Error> {
     let img = match image::open(path) {
@@ -37,8 +37,8 @@ fn write_into_stream(mut stream: &TcpStream, content: &[u8]) -> std::io::Result<
     Ok(())
 }
 
-pub fn serialize_and_write(stream: &TcpStream, obj: MessageData) -> std::io::Result<()> {
-    let serialized_string = match serialize_data(obj) {
+pub fn serialize_and_write(stream: &TcpStream, obj: StreamArrival) -> std::io::Result<()> {
+    let serialized_string = match serialize_stream(obj) {
         Ok(string) => string,
         _ => {
             return Err(invalid_input_error("Unable to serialize object"));
@@ -47,7 +47,7 @@ pub fn serialize_and_write(stream: &TcpStream, obj: MessageData) -> std::io::Res
     write_into_stream(stream, &serialized_string)
 }
 
-pub fn handle_image(stream: &TcpStream, path_string: &str) -> std::io::Result<()> {
+pub fn handle_image(stream: &TcpStream, path_string: &str, jwt: String) -> std::io::Result<()> {
     let path = Path::new(path_string);
 
     let message = match get_image(path) {
@@ -57,10 +57,13 @@ pub fn handle_image(stream: &TcpStream, path_string: &str) -> std::io::Result<()
         }
     };
 
-    serialize_and_write(stream, message)
+    serialize_and_write(
+        stream,
+        StreamArrival::StreamMessage(StreamMessage::new(jwt, message)),
+    )
 }
 
-pub fn handle_file(stream: &TcpStream, path_string: &str) -> std::io::Result<()> {
+pub fn handle_file(stream: &TcpStream, path_string: &str, jwt: String) -> std::io::Result<()> {
     let path = Path::new(path_string);
 
     let mut file = File::open(path)?;
@@ -72,5 +75,8 @@ pub fn handle_file(stream: &TcpStream, path_string: &str) -> std::io::Result<()>
         content,
     );
 
-    serialize_and_write(stream, message)
+    serialize_and_write(
+        stream,
+        StreamArrival::StreamMessage(StreamMessage::new(jwt, message)),
+    )
 }

@@ -5,18 +5,34 @@ use tokio;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
-use utils::AuthRequestKind;
+use utils::{
+    serialize_server_response, unspecified_error, AuthRequest, AuthRequestKind, ErrorResponse,
+    ServerResponse, StreamMessage,
+};
 
-use utils::errors::{handle_stream_error, StreamError};
-use utils::{deserialize_stream, output_message_data, serialize_data, MessageData, StreamArrival};
+use utils::errors::{handle_stream_error, ServerError, StreamError};
+use utils::{deserialize_stream, serialize_data, StreamArrival};
 
 type WriteHalfArc = Arc<Mutex<WriteHalf<TcpStream>>>;
-type StreamsHashMap = HashMap<SocketAddr, WriteHalfArc>;
+struct Client {
+    writer: WriteHalfArc,
+    token: String,
+}
+impl Client {
+    pub fn new(writer: WriteHalfArc, token: String) -> Self {
+        Client { writer, token }
+    }
+}
+type StreamsHashMap = HashMap<SocketAddr, Client>;
 
 use crate::db::DB;
 
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
+
+static ONE_MINUTE: usize = 60;
+static ONE_HOUR: usize = 60 * ONE_MINUTE;
+static ONE_DAY: usize = 24 * ONE_HOUR;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
@@ -44,13 +60,6 @@ pub async fn start_server(address: String) {
     rand::thread_rng().fill(&mut jwt_secret);
 
     let db = Arc::new(DB::new().unwrap());
-    /*
-    DB::new() -> Result<DB>: Creates a new database connection.
-    DB::create_user(&self, username: String, password: String) -> Result<User>: Creates a new user.
-    DB::check_password(&self, username: &str, password: &str) -> Result<bool>: Checks a user's password.
-    DB::save_message(&self, user_id: i32, message: MessageData) -> Result<()>: Saves a message.
-    DB::read_message(&self, message_id: i32) -> Result<Message>: Reads a message by ID.
-    DB::read_history(&self, amount: i32) -> Result<Vec<Message>>: Reads the most recent messages.*/
 
     println!("Creating a server on address: {}", address);
     let listener = TcpListener::bind(address).await.unwrap();
@@ -65,7 +74,7 @@ pub async fn start_server(address: String) {
         clients
             .lock()
             .await
-            .insert(client_addr, Arc::clone(&writer));
+            .insert(client_addr, Client::new(Arc::clone(&writer), String::new()));
 
         println!("Stream opened (addr: {})", client_addr);
 
@@ -76,138 +85,28 @@ pub async fn start_server(address: String) {
                 match handle_stream(&reader).await {
                     Ok(stream_arrival) => match stream_arrival {
                         StreamArrival::StreamMessage(stream_message) => {
-                            let user_id = match Claims::from_token(&stream_message.jwt, &jwt_secret)
-                            {
-                                Ok(claims) => claims.user_id,
-                                _ => {
-                                    eprintln!("Invalid token");
-                                    break;
-                                }
-                            };
-
-                            db_clone
-                                .save_message(user_id, stream_message.message.clone())
-                                .unwrap();
-
-                            let serialized_string = match serialize_data(stream_message.message) {
-                                Ok(string) => string,
-                                _ => {
-                                    eprintln!("Unable to serialize object");
-                                    continue;
-                                }
-                            };
-
-                            for (addr, client_writer) in clients_clone.lock().await.iter() {
-                                if *addr != client_addr {
-                                    let client_writer = client_writer.clone();
-                                    let serialized_string = serialized_string.clone();
-
-                                    tokio::spawn(async move {
-                                        write_into_stream(&client_writer, &serialized_string)
-                                            .await
-                                            .map_err(|e| println!("{}", e))
-                                            .ok();
-                                    });
-                                }
-                            }
+                            handle_stream_message(
+                                stream_message,
+                                &writer,
+                                &clients_clone,
+                                client_addr,
+                                &db_clone,
+                                &jwt_secret,
+                            )
+                            .await;
                         }
                         StreamArrival::AuthRequest(auth_request) => match auth_request.kind {
                             AuthRequestKind::Login => {
-                                let correct = db_clone
-                                    .check_password(&auth_request.username, &auth_request.password)
-                                    .unwrap();
-
-                                if correct {
-                                    let user_id =
-                                        db_clone.get_user_id(&auth_request.username).unwrap();
-
-                                    for (addr, client_writer) in clients_clone.lock().await.iter() {
-                                        if *addr == client_addr {
-                                            let token = Claims::new(user_id, 60 * 60 * 24)
-                                                .get_token(&jwt_secret)
-                                                .unwrap();
-                                            tokio::spawn(async move {
-                                                write_into_stream(
-                                                    &client_writer,
-                                                    &token.as_bytes(),
-                                                )
-                                                .await
-                                                .map_err(|e| println!("{}", e))
-                                                .ok();
-                                            });
-                                        }
-                                    }
-                                } else {
-                                    for (addr, client_writer) in clients_clone.lock().await.iter() {
-                                        if *addr == client_addr {
-                                            tokio::spawn(async move {
-                                                write_into_stream(
-                                                    &client_writer,
-                                                    b"Invalid credentials",
-                                                )
-                                                .await
-                                                .map_err(|e| println!("{}", e))
-                                                .ok();
-                                            });
-                                        }
-                                    }
-                                }
+                                handle_login(&writer, &db_clone, auth_request, &jwt_secret)
                             }
                             AuthRequestKind::Register => {
-                                let new_user = match db_clone
-                                    .create_user(auth_request.username, auth_request.password)
-                                {
-                                    Ok(user) => user,
-                                    _ => {
-                                        for (addr, client_writer) in
-                                            clients_clone.lock().await.iter()
-                                        {
-                                            if *addr == client_addr {
-                                                tokio::spawn(async move {
-                                                    write_into_stream(
-                                                        &client_writer,
-                                                        b"Username already exists",
-                                                    )
-                                                    .await
-                                                    .map_err(|e| println!("{}", e))
-                                                    .ok();
-                                                });
-                                            }
-                                        }
-                                        continue;
-                                    }
-                                };
-
-                                for (addr, client_writer) in clients_clone.lock().await.iter() {
-                                    if *addr == client_addr {
-                                        let token = Claims::new(new_user.id, 60 * 60 * 24)
-                                            .get_token(&jwt_secret)
-                                            .unwrap();
-                                        tokio::spawn(async move {
-                                            write_into_stream(&client_writer, &token.as_bytes())
-                                                .await
-                                                .map_err(|e| println!("{}", e))
-                                                .ok();
-                                        });
-                                    }
-                                }
+                                handle_register(&writer, &db_clone, auth_request, &jwt_secret)
                             }
                         },
                         StreamArrival::ReadRequest(read_request) => {
                             let messages = db_clone.read_history(read_request.amount).unwrap();
-
                             for message in messages {
-                                for (addr, client_writer) in clients_clone.lock().await.iter() {
-                                    if *addr == client_addr {
-                                        let content = message.content.clone();
-                                        tokio::spawn(async move {
-                                            write_into_stream(&client_writer, &content)
-                                                .await
-                                                .map_err(|e| println!("{}", e))
-                                                .ok();
-                                        });
-                                    }
-                                }
+                                spawn_write_task(&writer, message.content);
                             }
                         }
                     },
@@ -236,6 +135,16 @@ async fn write_into_stream(
     locked_writer.write_all(content).await?;
 
     Ok(())
+}
+
+fn spawn_write_task(writer: &Arc<Mutex<WriteHalf<TcpStream>>>, content: Vec<u8>) {
+    let writer = Arc::clone(writer);
+    tokio::spawn(async move {
+        write_into_stream(&writer, &content)
+            .await
+            .map_err(|e| println!("{}", e))
+            .ok();
+    });
 }
 
 async fn handle_stream(
@@ -269,4 +178,93 @@ async fn handle_stream(
     }); */
 
     Ok(stream_arrival)
+}
+
+fn handle_login(
+    writer: &Arc<Mutex<WriteHalf<TcpStream>>>,
+    db: &Arc<DB>,
+    auth_request: AuthRequest,
+    jwt_secret: &[u8; 32],
+) {
+    let check = db.check_password(&auth_request.username, &auth_request.password);
+
+    let correct = match check {
+        Ok(correct) => correct,
+        Err(e) => {
+            let response = ServerResponse::Error(ErrorResponse::DBError(e));
+            let serialized_response = serialize_server_response(response).unwrap();
+            spawn_write_task(&writer, serialized_response);
+            return;
+        }
+    };
+
+    if correct {
+        let user_id = db.get_user_id(&auth_request.username).unwrap();
+
+        let token = Claims::new(user_id, ONE_DAY).get_token(jwt_secret).unwrap();
+        let response_content = bincode::serialize(&ServerResponse::AuthToken(token)).unwrap();
+        spawn_write_task(&writer, response_content);
+    } else {
+        spawn_write_task(&writer, ServerError::InvalidCredentials.serialize());
+    }
+}
+
+fn handle_register(
+    writer: &Arc<Mutex<WriteHalf<TcpStream>>>,
+    db: &Arc<DB>,
+    auth_request: AuthRequest,
+    jwt_secret: &[u8; 32],
+) {
+    match db.create_user(auth_request.username, auth_request.password) {
+        Ok(new_user) => {
+            let token = Claims::new(new_user.id, ONE_DAY)
+                .get_token(jwt_secret)
+                .unwrap();
+            spawn_write_task(&writer, token.as_bytes().to_vec());
+        }
+        _ => spawn_write_task(&writer, ServerError::UsernameUsed.serialize()),
+    }
+}
+
+async fn handle_stream_message(
+    stream_message: StreamMessage,
+    writer: &Arc<Mutex<WriteHalf<TcpStream>>>,
+    clients: &Arc<Mutex<StreamsHashMap>>,
+    client_addr: SocketAddr,
+    db: &Arc<DB>,
+    jwt_secret: &[u8; 32],
+) {
+    let user_id = match Claims::from_token(&stream_message.jwt, jwt_secret) {
+        Ok(claims) => claims.user_id,
+        _ => {
+            eprintln!("Invalid token");
+            spawn_write_task(&writer, ServerError::InvalidToken.serialize());
+            return;
+        }
+    };
+
+    db.save_message(user_id, stream_message.message.clone())
+        .unwrap();
+
+    let serialized_string = match serialize_data(stream_message.message) {
+        Ok(string) => string,
+        _ => {
+            spawn_write_task(&writer, ServerError::SerializeObjectError.serialize());
+            return;
+        }
+    }
+    .to_vec();
+
+    for (addr, client) in clients.lock().await.iter() {
+        if *addr != client_addr {
+            match Claims::from_token(&client.token, jwt_secret) {
+                Ok(_) => {
+                    spawn_write_task(&client.writer, serialized_string.clone());
+                }
+                _ => (), // I could message the client that the token has expired, but messaging on every message is contraproductive
+            }
+        }
+    }
+
+    return;
 }
