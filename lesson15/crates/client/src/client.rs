@@ -3,7 +3,10 @@ use std::{
     net::TcpStream,
     sync::Arc,
 };
-use tokio::sync::{Mutex, Notify};
+use tokio::{
+    sync::{Mutex, Notify},
+    time::{sleep, Duration},
+};
 
 use utils::{
     deserialize_server_response, output_message_data, AuthRequest, AuthRequestKind, ErrorResponse,
@@ -68,13 +71,15 @@ pub async fn start_client(address: String) {
                 }
             };
 
+            sleep(Duration::from_millis(10000)).await;
+
             match message_data {
                 ServerResponse::AuthToken(token) => {
                     let mut jwt_lock = jwt.lock().await;
                     *jwt_lock = Some(token);
 
                     flush("Successfully logged in");
-                    notify_a.notify_waiters();
+                    notify_a.notify_one();
                 }
                 ServerResponse::Error(error) => {
                     match error {
@@ -86,7 +91,7 @@ pub async fn start_client(address: String) {
                         }
                     };
                     println!("trying to notify");
-                    notify_a.notify_waiters();
+                    notify_a.notify_one();
                     println!("prolly notified");
                 }
                 ServerResponse::Message(message_data) => {
