@@ -71,8 +71,6 @@ pub async fn start_client(address: String) {
                 }
             };
 
-            sleep(Duration::from_millis(10000)).await;
-
             match message_data {
                 ServerResponse::AuthToken(token) => {
                     let mut jwt_lock = jwt.lock().await;
