@@ -62,7 +62,6 @@ pub fn write_stream_error(e: Error) {
 }
  */
 
-
 #[derive(Serialize, Deserialize, Debug, Clone, Error)]
 pub enum DBError {
     #[error("Failed to create DB pool")]
@@ -98,6 +97,8 @@ pub enum ServerError {
     InvalidToken,
     #[error("Unable to serialize object")]
     SerializeObjectError,
+    #[error("Unable to deserialize object")]
+    DeserializeObjectError,
     #[error("Invalid credentials")]
     InvalidCredentials,
     #[error("Username is used")]
@@ -112,3 +113,25 @@ impl ServerError {
         bincode::deserialize(data).unwrap()
     }
 }
+
+use init_macros::create_error_init_functions;
+
+create_error_init_functions!(
+    DBError,
+    PoolCreationError,
+    ConnectionError,
+    UserInsertionError,
+    MessageInsertionError,
+    MessageNotFoundError,
+    MessageHistoryError,
+    UserNotFoundError,
+    PasswordVerificationError
+);
+create_error_init_functions!(
+    ServerError,
+    InvalidToken,
+    SerializeObjectError,
+    DeserializeObjectError,
+    InvalidCredentials,
+    UsernameUsed
+);

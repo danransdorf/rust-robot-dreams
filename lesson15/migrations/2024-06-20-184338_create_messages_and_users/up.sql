@@ -1,0 +1,13 @@
+-- Your SQL goes here
+CREATE TABLE messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INT NOT NULL,
+  content BINARY NOT NULL
+);
+
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username VARCHAR NOT NULL,
+  password VARCHAR NOT NULL,
+  salt BINARY NOT NULL
+);

@@ -6,12 +6,11 @@ use tokio::io::{self, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use utils::{
-    serialize_server_response, unspecified_error, AuthRequest, AuthRequestKind, ErrorResponse,
-    ServerResponse, StreamMessage,
+    AuthRequest, AuthRequestKind, ErrorResponse, MessageResponse, ServerResponse, StreamMessage,
 };
 
 use utils::errors::{handle_stream_error, ServerError, StreamError};
-use utils::{deserialize_stream, serialize_data, StreamArrival};
+use utils::{deserialize_stream, StreamArrival};
 
 type WriteHalfArc = Arc<Mutex<WriteHalf<TcpStream>>>;
 struct Client {
@@ -25,24 +24,27 @@ impl Client {
 }
 type StreamsHashMap = HashMap<SocketAddr, Client>;
 
-use crate::db::DB;
+use utils::db::DB;
 
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{
+    decode, encode, get_current_timestamp, Algorithm, DecodingKey, EncodingKey, Header, Validation,
+};
 use serde::{Deserialize, Serialize};
 
-static ONE_MINUTE: usize = 60;
-static ONE_HOUR: usize = 60 * ONE_MINUTE;
-static ONE_DAY: usize = 24 * ONE_HOUR;
+static ONE_MINUTE: u64 = 60;
+static ONE_HOUR: u64 = 60 * ONE_MINUTE;
+static ONE_DAY: u64 = 24 * ONE_HOUR;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
-    pub user_id: i32,
-    pub exp: usize,
+    /** User ID */
+    pub sub: i32,
+    pub exp: u64,
 }
 
 impl Claims {
-    pub fn new(user_id: i32, exp: usize) -> Self {
-        Claims { user_id, exp }
+    pub fn new(user_id: i32, exp: u64) -> Self {
+        Claims { sub: user_id, exp }
     }
     pub fn from_token(token: &str, secret: &[u8]) -> Result<Self, jsonwebtoken::errors::Error> {
         let validation = Validation::new(Algorithm::HS256);
@@ -50,7 +52,8 @@ impl Claims {
         Ok(token_data.claims)
     }
     pub fn get_token(&self, secret: &[u8]) -> Result<String, jsonwebtoken::errors::Error> {
-        let token = encode(&Header::default(), &self, &EncodingKey::from_secret(secret))?;
+        let header = Header::new(Algorithm::HS256);
+        let token = encode(&header, &self, &EncodingKey::from_secret(secret))?;
         Ok(token)
     }
 }
@@ -97,16 +100,50 @@ pub async fn start_server(address: String) {
                         }
                         StreamArrival::AuthRequest(auth_request) => match auth_request.kind {
                             AuthRequestKind::Login => {
-                                handle_login(&writer, &db_clone, auth_request, &jwt_secret)
+                                if let Some(token) =
+                                    handle_login(&writer, &db_clone, auth_request, &jwt_secret)
+                                {
+                                    clients_clone
+                                        .lock()
+                                        .await
+                                        .get_mut(&client_addr)
+                                        .unwrap()
+                                        .token = token;
+                                }
                             }
                             AuthRequestKind::Register => {
-                                handle_register(&writer, &db_clone, auth_request, &jwt_secret)
+                                if let Some(token) =
+                                    handle_register(&writer, &db_clone, auth_request, &jwt_secret)
+                                {
+                                    clients_clone
+                                        .lock()
+                                        .await
+                                        .get_mut(&client_addr)
+                                        .unwrap()
+                                        .token = token;
+                                }
                             }
                         },
                         StreamArrival::ReadRequest(read_request) => {
                             let messages = db_clone.read_history(read_request.amount).unwrap();
                             for message in messages {
-                                spawn_write_task(&writer, ServerResponse::Message(message));
+                                let message_response_res =
+                                    MessageResponse::from_db_message(&message, &db_clone);
+
+                                match message_response_res {
+                                    Ok(message_response) => {
+                                        spawn_write_task(
+                                            &writer,
+                                            ServerResponse::Message(message_response),
+                                        );
+                                    }
+                                    Err(error_response) => {
+                                        spawn_write_task(
+                                            &writer,
+                                            ServerResponse::Error(error_response),
+                                        );
+                                    }
+                                }
                             }
                         }
                     },
@@ -186,7 +223,7 @@ fn handle_login(
     db: &Arc<DB>,
     auth_request: AuthRequest,
     jwt_secret: &[u8; 32],
-) {
+) -> Option<String> {
     let check = db.check_password(&auth_request.username, &auth_request.password);
 
     let correct = match check {
@@ -194,21 +231,28 @@ fn handle_login(
         Err(e) => {
             let response = ServerResponse::Error(ErrorResponse::DBError(e));
             spawn_write_task(&writer, response);
-            return;
+            return None;
         }
     };
 
     if correct {
         let user_id = db.get_user_id(&auth_request.username).unwrap();
 
-        let token = Claims::new(user_id, ONE_DAY).get_token(jwt_secret).unwrap();
-        spawn_write_task(&writer, ServerResponse::AuthToken(token));
-    } else {
-        spawn_write_task(
-            &writer,
-            ServerResponse::Error(ErrorResponse::ServerError(ServerError::InvalidCredentials)),
-        );
+        let token = Claims::new(user_id, get_current_timestamp() + ONE_DAY)
+            .get_token(jwt_secret)
+            .unwrap();
+
+        spawn_write_task(&writer, ServerResponse::AuthToken(token.clone()));
+
+        return Some(token);
     }
+
+    spawn_write_task(
+        &writer,
+        ServerResponse::Error(ErrorResponse::ServerError(ServerError::InvalidCredentials)),
+    );
+
+    return None;
 }
 
 fn handle_register(
@@ -216,19 +260,25 @@ fn handle_register(
     db: &Arc<DB>,
     auth_request: AuthRequest,
     jwt_secret: &[u8; 32],
-) {
+) -> Option<String> {
     match db.create_user(auth_request.username, auth_request.password) {
         Ok(new_user) => {
-            let token = Claims::new(new_user.id, ONE_DAY)
+            let token = Claims::new(new_user.id.unwrap(), get_current_timestamp() + ONE_DAY)
                 .get_token(jwt_secret)
                 .unwrap();
 
-            spawn_write_task(&writer, ServerResponse::AuthToken(token));
+            spawn_write_task(&writer, ServerResponse::AuthToken(token.clone()));
+
+            Some(token)
         }
-        _ => spawn_write_task(
-            &writer,
-            ServerResponse::Error(ErrorResponse::ServerError(ServerError::UsernameUsed)),
-        ),
+        Err(e) => {
+            println!("{}", e);
+            spawn_write_task(
+                &writer,
+                ServerResponse::Error(ErrorResponse::ServerError(ServerError::UsernameUsed)),
+            );
+            None
+        }
     }
 }
 
@@ -241,7 +291,7 @@ async fn handle_stream_message(
     jwt_secret: &[u8; 32],
 ) {
     let user_id = match Claims::from_token(&stream_message.jwt, jwt_secret) {
-        Ok(claims) => claims.user_id,
+        Ok(claims) => claims.sub,
         _ => {
             eprintln!("Invalid token");
             spawn_write_task(
@@ -252,15 +302,23 @@ async fn handle_stream_message(
         }
     };
 
-    db.save_message(user_id, stream_message.message.clone())
+    let message = db
+        .save_message(user_id, stream_message.message.clone())
         .unwrap();
 
     for (addr, client) in clients.lock().await.iter() {
         if *addr != client_addr {
+            println!("Sending message to {}, token: {}", addr, &client.token);
             match Claims::from_token(&client.token, jwt_secret) {
-                Ok(_) => {
-                    spawn_write_task(&client.writer, todo!());
-                }
+                Ok(_) => match MessageResponse::from_db_message(&message, &db) {
+                    Ok(message_response) => {
+                        println!("Should send message");
+                        spawn_write_task(&client.writer, ServerResponse::Message(message_response));
+                    }
+                    Err(error_response) => {
+                        spawn_write_task(&writer, ServerResponse::Error(error_response))
+                    }
+                },
                 _ => (), // I could message the client that the token has expired, but messaging on every message is contraproductive
             }
         }

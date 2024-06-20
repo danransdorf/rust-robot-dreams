@@ -1,12 +1,17 @@
 use std::{
     fs::File,
-    io::{stdin, stdout, Error, ErrorKind, Read, Write},
-    net::TcpStream,
+    io::{stdin, stdout, Write},
+    sync::Arc,
 };
 
-use crate::db_schema::Message;
+use crate::db::{
+    structs::{Message, User},
+    DB,
+};
+use anyhow::Result;
 use chrono::Local;
 use clap::{arg, command, Parser};
+use init_macros::create_value_init_functions;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{handle_stream_error, DBError, ServerError, StreamError};
@@ -21,16 +26,21 @@ pub enum MessageData {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MessageResponse {
     id: i32,
-    user_id: i32,
+    user: User,
     content: MessageData,
 }
 impl MessageResponse {
-    pub fn from_db_message(message: Message) -> Self {
-        MessageResponse {
-            id: message.id,
-            user_id: message.user_id,
-            content: deserialize_data(message.content).unwrap(),
-        }
+    pub fn from_db_message(message: &Message, db: &Arc<DB>) -> Result<Self, ErrorResponse> {
+        let user = db
+            .get_user(message.user_id)
+            .map_err(|e| ErrorResponse::DBError(e))?;
+        let content = deserialize_data(message.content.to_owned())
+            .map_err(|_| ErrorResponse::ServerError(ServerError::DeserializeObjectError))?;
+        Ok(MessageResponse {
+            id: message.id.unwrap(),
+            user,
+            content,
+        })
     }
 }
 
@@ -39,12 +49,19 @@ pub enum ErrorResponse {
     DBError(DBError),
     ServerError(ServerError),
 }
+create_value_init_functions!(ErrorResponse, DBError(DBError), ServerError(ServerError));
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ServerResponse {
-    Message(MessageData),
+    Message(MessageResponse),
     AuthToken(String),
     Error(ErrorResponse),
 }
+create_value_init_functions!(
+    ServerResponse,
+    Message(MessageResponse),
+    AuthToken(String),
+    Error(ErrorResponse)
+);
 impl ServerResponse {
     pub fn serialize(self) -> Vec<u8> {
         serialize_server_response(self).unwrap()
@@ -177,11 +194,14 @@ pub fn save_file(filename: &str, bytes: &Vec<u8>) -> Result<String, StreamError>
     Ok(filename.to_string())
 }
 
-pub fn output_message_data(message_data: &MessageData) {
-    match message_data {
+pub fn output_message_data(message_data: MessageResponse) {
+    match message_data.content {
         MessageData::File(filename, bytes) => {
-            match save_file(filename, bytes) {
-                Ok(filename) => flush(&format!("Received file: {filename}")),
+            match save_file(&filename, &bytes) {
+                Ok(filename) => flush(&format!(
+                    "{}: sent a file {}",
+                    message_data.user.username, filename
+                )),
                 Err(e) => {
                     flush("Received file, but failed to save it");
                     handle_stream_error(e)
@@ -189,8 +209,11 @@ pub fn output_message_data(message_data: &MessageData) {
             };
         }
         MessageData::Image(bytes) => {
-            match save_image(bytes) {
-                Ok(filename) => flush(&format!("Received image: {filename}")),
+            match save_image(&bytes) {
+                Ok(filename) => flush(&format!(
+                    "{}: sent an image {}",
+                    message_data.user.username, filename
+                )),
                 Err(e) => {
                     flush("Received image, but failed to save it");
                     handle_stream_error(e)
@@ -198,7 +221,7 @@ pub fn output_message_data(message_data: &MessageData) {
             };
         }
         MessageData::Text(string) => {
-            flush(&format!("Received message: {string}"));
+            flush(&format!("{}: {}", message_data.user.username, string));
         }
     }
 }

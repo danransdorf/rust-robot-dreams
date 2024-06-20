@@ -1,5 +1,5 @@
-use utils::get_address;
 use client::start_client;
+use utils::get_address;
 
 #[tokio::main]
 async fn main() {

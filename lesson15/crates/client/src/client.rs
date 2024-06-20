@@ -3,10 +3,7 @@ use std::{
     net::TcpStream,
     sync::Arc,
 };
-use tokio::{
-    sync::{Mutex, Notify},
-    time::{sleep, Duration},
-};
+use tokio::sync::{Mutex, Notify};
 
 use utils::{
     deserialize_server_response, output_message_data, AuthRequest, AuthRequestKind, ErrorResponse,
@@ -21,11 +18,13 @@ use utils::{
 
 fn print_help() {
     println!("Possible commands:");
-    println!("    .file <path>");
-    println!("    .image <path>");
-    println!("    .quit");
-    println!("    .help");
+    println!("    .file <path> - Send a file located at <path> to the chat");
+    println!("    .image <path> - Send an image located at <path> to the chat");
+    println!("    .quit - Exit the chat application");
+    println!("    .history <amount> - Display the last <amount> messages from the chat history");
+    println!("    .help - Display this help message");
 }
+
 fn exit_program() {
     println!("Exiting program...");
     std::process::exit(0x0100);
@@ -78,7 +77,6 @@ pub async fn start_client(address: String) {
 
                     flush("Successfully logged in");
                     notify_a.notify_one();
-                    sleep(Duration::from_millis(1)).await;
                 }
                 ServerResponse::Error(error) => {
                     match error {
@@ -89,110 +87,97 @@ pub async fn start_client(address: String) {
                             eprintln!("Server error: {e}");
                         }
                     };
-                    println!("trying to notify");
                     notify_a.notify_one();
-                    sleep(Duration::from_millis(1)).await;
-                    println!("prolly notified");
                 }
                 ServerResponse::Message(message_data) => {
-                    output_message_data(&message_data);
+                    output_message_data(message_data);
                 }
             }
         }
     });
 
-    tokio::spawn(async move {
-        loop {
-            let jwt_lock = jwt_clone.lock().await.clone();
-            match &jwt_lock {
-                None => {
-                    let (auth_method, (username, password)) = prompt_auth();
+    loop {
+        let jwt_lock = jwt_clone.lock().await.clone();
+        match &jwt_lock {
+            None => {
+                let (auth_method, (username, password)) = prompt_auth();
 
-                    serialize_and_write(
-                        &stream,
-                        StreamArrival::AuthRequest(AuthRequest::new(
-                            auth_method,
-                            username,
-                            password,
-                        )),
-                    )
-                    .map_err(|e| eprintln!("{}", e))
-                    .ok();
+                serialize_and_write(
+                    &stream,
+                    StreamArrival::AuthRequest(AuthRequest::new(auth_method, username, password)),
+                )
+                .map_err(|e| eprintln!("{}", e))
+                .ok();
 
-                    println!("waiting");
-                    notify_b.notified().await;
-                    println!("continuing")
+                notify_b.notified().await;
+            }
+            Some(jwt_token) => {
+                flush("\nEnter message (Ctrl+D to send), send `.help` for possible commands:");
+
+                let mut input_bytes = vec![];
+                if let Err(e) = stdin().read_to_end(&mut input_bytes) {
+                    eprintln!("\nFailed to read the input: {}", e);
+                    continue;
                 }
-                Some(jwt_token) => {
-                    flush("\nEnter message (Ctrl+D to send), send `.help` for possible commands:");
+                flush("\n");
 
-                    let mut input_bytes = vec![];
-                    if let Err(e) = stdin().read_to_end(&mut input_bytes) {
-                        eprintln!("\nFailed to read the input: {}", e);
-                        continue;
+                let input_string = String::from_utf8_lossy(&input_bytes).trim().to_string();
+                let mut command = input_string.splitn(2, ' ');
+                match command.next() {
+                    Some(".quit") => exit_program(),
+                    Some(".help") => print_help(),
+                    Some(".image") => {
+                        if let Some(path) = command.next() {
+                            handle_image(&stream, path, jwt_token.to_owned())
+                                .map_err(|e| println!("{}", e))
+                                .ok();
+                        } else {
+                            eprintln!("{}", ClientError::PathError(".image"))
+                        }
                     }
-                    flush("\n");
-
-                    let input_string = String::from_utf8_lossy(&input_bytes).trim().to_string();
-                    let mut command = input_string.splitn(2, ' ');
-                    match command.next() {
-                        Some(".quit") => exit_program(),
-                        Some(".help") => print_help(),
-                        Some(".image") => {
-                            if let Some(path) = command.next() {
-                                handle_image(&stream, path, jwt_token.to_owned())
-                                    .map_err(|e| println!("{}", e))
-                                    .ok();
+                    Some(".file") => {
+                        if let Some(path) = command.next() {
+                            handle_file(&stream, path, jwt_token.to_owned())
+                                .map_err(|e| println!("{}", e))
+                                .ok();
+                        } else {
+                            eprintln!("{}", ClientError::PathError(".file"))
+                        }
+                    }
+                    Some(".history") => {
+                        if let Some(amount_string) = command.next() {
+                            if let Ok(amount) = amount_string.parse::<i32>() {
+                                serialize_and_write(
+                                    &stream,
+                                    StreamArrival::ReadRequest(ReadRequest {
+                                        jwt: jwt_token.to_owned(),
+                                        amount,
+                                    }),
+                                )
+                                .map_err(|e| eprintln!("{}", e))
+                                .ok();
                             } else {
-                                eprintln!("{}", ClientError::PathError(".image"))
+                                eprintln!("Invalid amount provided");
                             }
+                        } else {
+                            eprintln!("No amount provided");
                         }
-                        Some(".file") => {
-                            if let Some(path) = command.next() {
-                                handle_file(&stream, path, jwt_token.to_owned())
-                                    .map_err(|e| println!("{}", e))
-                                    .ok();
-                            } else {
-                                eprintln!("{}", ClientError::PathError(".file"))
-                            }
-                        }
-                        Some(".read") => {
-                            if let Some(amount_string) = command.next() {
-                                if let Ok(amount) = amount_string.parse::<i32>() {
-                                    serialize_and_write(
-                                        &stream,
-                                        StreamArrival::ReadRequest(ReadRequest {
-                                            jwt: jwt_token.to_owned(),
-                                            amount,
-                                        }),
-                                    )
-                                    .map_err(|e| eprintln!("{}", e))
-                                    .ok();
-                                } else {
-                                    eprintln!("Invalid amount provided");
-                                }
-                            } else {
-                                eprintln!("No amount provided");
-                            }
-                        }
-                        _ => {
-                            serialize_and_write(
-                                &stream,
-                                StreamArrival::StreamMessage(StreamMessage::new(
-                                    jwt_token.to_owned(),
-                                    MessageData::Text(input_string),
-                                )),
-                            )
-                            .map_err(|e| eprintln!("{}", e))
-                            .ok();
-                        }
+                    }
+                    _ => {
+                        serialize_and_write(
+                            &stream,
+                            StreamArrival::StreamMessage(StreamMessage::new(
+                                jwt_token.to_owned(),
+                                MessageData::Text(input_string),
+                            )),
+                        )
+                        .map_err(|e| eprintln!("{}", e))
+                        .ok();
                     }
                 }
             }
         }
-    })
-    .await
-    .unwrap();
+    }
 }
 
 fn prompt_auth() -> (AuthRequestKind, (String, String)) {
