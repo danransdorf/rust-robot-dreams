@@ -4,9 +4,12 @@ use std::{
     sync::Arc,
 };
 
-use crate::db::{
-    structs::{Message, User},
-    DB,
+use crate::{
+    db::{
+        structs::{Message, User},
+        DB,
+    },
+    errors::deserialize_object_error,
 };
 use anyhow::Result;
 use chrono::Local;
@@ -31,11 +34,9 @@ pub struct MessageResponse {
 }
 impl MessageResponse {
     pub fn from_db_message(message: &Message, db: &Arc<DB>) -> Result<Self, ErrorResponse> {
-        let user = db
-            .get_user(message.user_id)
-            .map_err(|e| ErrorResponse::DBError(e))?;
+        let user = db.get_user(message.user_id).map_err(|e| db_error(e))?;
         let content = deserialize_data(message.content.to_owned())
-            .map_err(|_| ErrorResponse::ServerError(ServerError::DeserializeObjectError))?;
+            .map_err(|_| server_error(deserialize_object_error()))?;
         Ok(MessageResponse {
             id: message.id.unwrap(),
             user,

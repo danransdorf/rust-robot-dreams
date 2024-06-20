@@ -6,10 +6,14 @@ use tokio::io::{self, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use utils::{
-    AuthRequest, AuthRequestKind, ErrorResponse, MessageResponse, ServerResponse, StreamMessage,
+    auth_token, db_error, error, message, server_error, AuthRequest, AuthRequestKind,
+    ErrorResponse, MessageResponse, ServerResponse, StreamMessage,
 };
 
-use utils::errors::{handle_stream_error, ServerError, StreamError};
+use utils::errors::{
+    handle_stream_error, invalid_credentials, invalid_token, username_used, ServerError,
+    StreamError,
+};
 use utils::{deserialize_stream, StreamArrival};
 
 type WriteHalfArc = Arc<Mutex<WriteHalf<TcpStream>>>;
@@ -126,22 +130,16 @@ pub async fn start_server(address: String) {
                         },
                         StreamArrival::ReadRequest(read_request) => {
                             let messages = db_clone.read_history(read_request.amount).unwrap();
-                            for message in messages {
+                            for message_obj in messages {
                                 let message_response_res =
-                                    MessageResponse::from_db_message(&message, &db_clone);
+                                    MessageResponse::from_db_message(&message_obj, &db_clone);
 
                                 match message_response_res {
                                     Ok(message_response) => {
-                                        spawn_write_task(
-                                            &writer,
-                                            ServerResponse::Message(message_response),
-                                        );
+                                        spawn_write_task(&writer, message(message_response));
                                     }
                                     Err(error_response) => {
-                                        spawn_write_task(
-                                            &writer,
-                                            ServerResponse::Error(error_response),
-                                        );
+                                        spawn_write_task(&writer, error(error_response));
                                     }
                                 }
                             }
@@ -229,7 +227,7 @@ fn handle_login(
     let correct = match check {
         Ok(correct) => correct,
         Err(e) => {
-            let response = ServerResponse::Error(ErrorResponse::DBError(e));
+            let response = error(db_error(e));
             spawn_write_task(&writer, response);
             return None;
         }
@@ -242,15 +240,12 @@ fn handle_login(
             .get_token(jwt_secret)
             .unwrap();
 
-        spawn_write_task(&writer, ServerResponse::AuthToken(token.clone()));
+        spawn_write_task(&writer, auth_token(token.clone()));
 
         return Some(token);
     }
 
-    spawn_write_task(
-        &writer,
-        ServerResponse::Error(ErrorResponse::ServerError(ServerError::InvalidCredentials)),
-    );
+    spawn_write_task(&writer, error(server_error(invalid_credentials())));
 
     return None;
 }
@@ -267,16 +262,13 @@ fn handle_register(
                 .get_token(jwt_secret)
                 .unwrap();
 
-            spawn_write_task(&writer, ServerResponse::AuthToken(token.clone()));
+            spawn_write_task(&writer, auth_token(token.clone()));
 
             Some(token)
         }
         Err(e) => {
             println!("{}", e);
-            spawn_write_task(
-                &writer,
-                ServerResponse::Error(ErrorResponse::ServerError(ServerError::UsernameUsed)),
-            );
+            spawn_write_task(&writer, error(server_error(username_used())));
             None
         }
     }
@@ -294,15 +286,12 @@ async fn handle_stream_message(
         Ok(claims) => claims.sub,
         _ => {
             eprintln!("Invalid token");
-            spawn_write_task(
-                &writer,
-                ServerResponse::Error(ErrorResponse::ServerError(ServerError::InvalidToken)),
-            );
+            spawn_write_task(&writer, error(server_error(invalid_token())));
             return;
         }
     };
 
-    let message = db
+    let message_obj = db
         .save_message(user_id, stream_message.message.clone())
         .unwrap();
 
@@ -310,16 +299,14 @@ async fn handle_stream_message(
         if *addr != client_addr {
             println!("Sending message to {}, token: {}", addr, &client.token);
             match Claims::from_token(&client.token, jwt_secret) {
-                Ok(_) => match MessageResponse::from_db_message(&message, &db) {
+                Ok(_) => match MessageResponse::from_db_message(&message_obj, &db) {
                     Ok(message_response) => {
                         println!("Should send message");
-                        spawn_write_task(&client.writer, ServerResponse::Message(message_response));
+                        spawn_write_task(&client.writer, message(message_response));
                     }
-                    Err(error_response) => {
-                        spawn_write_task(&writer, ServerResponse::Error(error_response))
-                    }
+                    Err(error_response) => spawn_write_task(&writer, error(error_response)),
                 },
-                _ => (), // I could message the client that the token has expired, but messaging on every message is contraproductive
+                _ => (), // I could message the client that the token has expired, but messaging on every message that passes through the chat seems counterproductive
             }
         }
     }
