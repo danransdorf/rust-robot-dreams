@@ -10,4 +10,5 @@ serde = { version = "1.0.203", features = ["derive"] }
 image = "0.25.1"
 clap = { version = "4.5.4", features = ["derive"] }
 thiserror = "1.0"
+diesel = {version = "2.2.1", features = ["sqlite", "r2d2"]}
 anyhow = "1.0.86"

@@ -106,7 +106,7 @@ pub async fn start_server(address: String) {
                         StreamArrival::ReadRequest(read_request) => {
                             let messages = db_clone.read_history(read_request.amount).unwrap();
                             for message in messages {
-                                spawn_write_task(&writer, message.content);
+                                spawn_write_task(&writer, ServerResponse::Message(message));
                             }
                         }
                     },
@@ -137,7 +137,8 @@ async fn write_into_stream(
     Ok(())
 }
 
-fn spawn_write_task(writer: &Arc<Mutex<WriteHalf<TcpStream>>>, content: Vec<u8>) {
+fn spawn_write_task(writer: &Arc<Mutex<WriteHalf<TcpStream>>>, response: ServerResponse) {
+    let content = response.serialize();
     let writer = Arc::clone(writer);
     tokio::spawn(async move {
         write_into_stream(&writer, &content)
@@ -192,8 +193,7 @@ fn handle_login(
         Ok(correct) => correct,
         Err(e) => {
             let response = ServerResponse::Error(ErrorResponse::DBError(e));
-            let serialized_response = serialize_server_response(response).unwrap();
-            spawn_write_task(&writer, serialized_response);
+            spawn_write_task(&writer, response);
             return;
         }
     };
@@ -202,10 +202,12 @@ fn handle_login(
         let user_id = db.get_user_id(&auth_request.username).unwrap();
 
         let token = Claims::new(user_id, ONE_DAY).get_token(jwt_secret).unwrap();
-        let response_content = bincode::serialize(&ServerResponse::AuthToken(token)).unwrap();
-        spawn_write_task(&writer, response_content);
+        spawn_write_task(&writer, ServerResponse::AuthToken(token));
     } else {
-        spawn_write_task(&writer, ServerError::InvalidCredentials.serialize());
+        spawn_write_task(
+            &writer,
+            ServerResponse::Error(ErrorResponse::ServerError(ServerError::InvalidCredentials)),
+        );
     }
 }
 
@@ -220,9 +222,13 @@ fn handle_register(
             let token = Claims::new(new_user.id, ONE_DAY)
                 .get_token(jwt_secret)
                 .unwrap();
-            spawn_write_task(&writer, token.as_bytes().to_vec());
+
+            spawn_write_task(&writer, ServerResponse::AuthToken(token));
         }
-        _ => spawn_write_task(&writer, ServerError::UsernameUsed.serialize()),
+        _ => spawn_write_task(
+            &writer,
+            ServerResponse::Error(ErrorResponse::ServerError(ServerError::UsernameUsed)),
+        ),
     }
 }
 
@@ -238,7 +244,10 @@ async fn handle_stream_message(
         Ok(claims) => claims.user_id,
         _ => {
             eprintln!("Invalid token");
-            spawn_write_task(&writer, ServerError::InvalidToken.serialize());
+            spawn_write_task(
+                &writer,
+                ServerResponse::Error(ErrorResponse::ServerError(ServerError::InvalidToken)),
+            );
             return;
         }
     };
@@ -246,20 +255,11 @@ async fn handle_stream_message(
     db.save_message(user_id, stream_message.message.clone())
         .unwrap();
 
-    let serialized_string = match serialize_data(stream_message.message) {
-        Ok(string) => string,
-        _ => {
-            spawn_write_task(&writer, ServerError::SerializeObjectError.serialize());
-            return;
-        }
-    }
-    .to_vec();
-
     for (addr, client) in clients.lock().await.iter() {
         if *addr != client_addr {
             match Claims::from_token(&client.token, jwt_secret) {
                 Ok(_) => {
-                    spawn_write_task(&client.writer, serialized_string.clone());
+                    spawn_write_task(&client.writer, todo!());
                 }
                 _ => (), // I could message the client that the token has expired, but messaging on every message is contraproductive
             }

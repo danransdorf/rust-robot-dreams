@@ -1643,6 +1643,7 @@ dependencies = [
  "bincode",
  "chrono",
  "clap",
+ "diesel",
  "image",
  "serde",
  "thiserror",

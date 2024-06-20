@@ -4,6 +4,7 @@ use std::{
     net::TcpStream,
 };
 
+use crate::db_schema::Message;
 use chrono::Local;
 use clap::{arg, command, Parser};
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,22 @@ pub enum MessageData {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MessageResponse {
+    id: i32,
+    user_id: i32,
+    content: MessageData,
+}
+impl MessageResponse {
+    pub fn from_db_message(message: Message) -> Self {
+        MessageResponse {
+            id: message.id,
+            user_id: message.user_id,
+            content: deserialize_data(message.content).unwrap(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ErrorResponse {
     DBError(DBError),
     ServerError(ServerError),
@@ -27,6 +44,11 @@ pub enum ServerResponse {
     Message(MessageData),
     AuthToken(String),
     Error(ErrorResponse),
+}
+impl ServerResponse {
+    pub fn serialize(self) -> Vec<u8> {
+        serialize_server_response(self).unwrap()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

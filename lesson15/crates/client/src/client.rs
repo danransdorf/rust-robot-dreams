@@ -78,6 +78,7 @@ pub async fn start_client(address: String) {
 
                     flush("Successfully logged in");
                     notify_a.notify_one();
+                    sleep(Duration::from_millis(1)).await;
                 }
                 ServerResponse::Error(error) => {
                     match error {
@@ -90,6 +91,7 @@ pub async fn start_client(address: String) {
                     };
                     println!("trying to notify");
                     notify_a.notify_one();
+                    sleep(Duration::from_millis(1)).await;
                     println!("prolly notified");
                 }
                 ServerResponse::Message(message_data) => {
