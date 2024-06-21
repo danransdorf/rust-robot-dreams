@@ -6,14 +6,13 @@ use std::{
 use tokio::sync::{Mutex, Notify};
 
 use utils::{
-    deserialize_server_response, output_message_data, AuthRequest, AuthRequestKind, ErrorResponse,
-    ServerResponse, StreamArrival, StreamMessage,
+    auth_request, deserialize_server_response, output_message_data, read_request, stream_message,
+    text, AuthRequest, AuthRequestKind, ErrorResponse, ServerResponse, StreamMessage,
 };
 use utils::{errors::ClientError, ReadRequest};
 use utils::{
     flush,
     write_utils::{handle_file, handle_image, serialize_and_write},
-    MessageData,
 };
 
 fn print_help() {
@@ -41,7 +40,6 @@ pub async fn start_client(address: String) {
 
     let notify = Arc::new(Notify::new());
     let notify_a = Arc::clone(&notify);
-    let notify_b = Arc::clone(&notify);
 
     tokio::spawn(async move {
         loop {
@@ -104,12 +102,12 @@ pub async fn start_client(address: String) {
 
                 serialize_and_write(
                     &stream,
-                    StreamArrival::AuthRequest(AuthRequest::new(auth_method, username, password)),
+                    auth_request(AuthRequest::new(auth_method, username, password)),
                 )
                 .map_err(|e| eprintln!("{}", e))
                 .ok();
 
-                notify_b.notified().await;
+                notify.notified().await;
             }
             Some(jwt_token) => {
                 flush("\nEnter message (Ctrl+D to send), send `.help` for possible commands:");
@@ -149,7 +147,7 @@ pub async fn start_client(address: String) {
                             if let Ok(amount) = amount_string.parse::<i32>() {
                                 serialize_and_write(
                                     &stream,
-                                    StreamArrival::ReadRequest(ReadRequest {
+                                    read_request(ReadRequest {
                                         jwt: jwt_token.to_owned(),
                                         amount,
                                     }),
@@ -166,9 +164,9 @@ pub async fn start_client(address: String) {
                     _ => {
                         serialize_and_write(
                             &stream,
-                            StreamArrival::StreamMessage(StreamMessage::new(
+                            stream_message(StreamMessage::new(
                                 jwt_token.to_owned(),
-                                MessageData::Text(input_string),
+                                text(input_string),
                             )),
                         )
                         .map_err(|e| eprintln!("{}", e))

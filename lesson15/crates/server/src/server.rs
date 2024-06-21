@@ -213,11 +213,6 @@ async fn handle_stream(
         StreamError::ReadMessageError(Error::new(ErrorKind::InvalidData, "Failed to deserialize"))
     })?;
 
-    /*  let message_data_clone = message_data.clone();
-    tokio::spawn(async move {
-        output_message_data(&message_data_clone);
-    }); */
-
     Ok(stream_arrival)
 }
 
