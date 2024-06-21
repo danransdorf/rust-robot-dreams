@@ -22,14 +22,18 @@ macro_rules! diesel_struct {
             }
 
             impl [<ToBeInserted $name>] {
-            pub fn new($($field: $type),*) -> Self {
-                [<ToBeInserted $name>] {$($field),*}
+                pub fn new($($field: $type),*) -> Self {
+                    [<ToBeInserted $name>] {$($field),*}
+                }
             }
-        }
         }
     };
 }
 
+/*
+Generate structs representing the data objects to be inserted (without id) ToBeInserted{name}.
+And generate structs representing the response from the database (with auto-incremented id)
+*/
 diesel_struct!(
     User,
     users,

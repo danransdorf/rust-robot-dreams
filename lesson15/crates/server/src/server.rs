@@ -7,12 +7,11 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use utils::{
     auth_token, db_error, error, message, server_error, AuthRequest, AuthRequestKind,
-    ErrorResponse, MessageResponse, ServerResponse, StreamMessage,
+    MessageResponse, ServerResponse, StreamMessage,
 };
 
 use utils::errors::{
-    handle_stream_error, invalid_credentials, invalid_token, username_used, ServerError,
-    StreamError,
+    handle_stream_error, invalid_credentials, invalid_token, username_used, StreamError,
 };
 use utils::{deserialize_stream, StreamArrival};
 
@@ -207,11 +206,6 @@ async fn handle_stream(
     let stream_arrival = deserialize_stream(buffer).map_err(|_| {
         StreamError::ReadMessageError(Error::new(ErrorKind::InvalidData, "Failed to deserialize"))
     })?;
-
-    /*  let message_data_clone = message_data.clone();
-    tokio::spawn(async move {
-        output_message_data(&message_data_clone);
-    }); */
 
     Ok(stream_arrival)
 }

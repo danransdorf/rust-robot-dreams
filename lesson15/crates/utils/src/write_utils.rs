@@ -5,13 +5,16 @@ use std::{
     path::Path,
 };
 
-use image::ImageFormat;
+use image as image_crate;
+use image_crate::ImageFormat;
 
-use crate::{errors::invalid_input_error, serialize_stream, StreamArrival};
+use crate::{
+    errors::invalid_input_error, file, image, serialize_stream, stream_message, StreamArrival,
+};
 use crate::{utils::MessageData, StreamMessage};
 
 fn get_image(path: &Path) -> Result<MessageData, Error> {
-    let img = match image::open(path) {
+    let img = match image_crate::open(path) {
         Err(_) => {
             return Err(invalid_input_error("Failed to open image from path"));
         }
@@ -25,7 +28,7 @@ fn get_image(path: &Path) -> Result<MessageData, Error> {
         ));
     }
 
-    Ok(MessageData::Image(buf))
+    Ok(image(buf))
 }
 
 fn write_into_stream(mut stream: &TcpStream, content: &[u8]) -> std::io::Result<()> {
@@ -57,26 +60,20 @@ pub fn handle_image(stream: &TcpStream, path_string: &str, jwt: String) -> std::
         }
     };
 
-    serialize_and_write(
-        stream,
-        StreamArrival::StreamMessage(StreamMessage::new(jwt, message)),
-    )
+    serialize_and_write(stream, stream_message(StreamMessage::new(jwt, message)))
 }
 
 pub fn handle_file(stream: &TcpStream, path_string: &str, jwt: String) -> std::io::Result<()> {
     let path = Path::new(path_string);
 
-    let mut file = File::open(path)?;
+    let mut file_ref = File::open(path)?;
     let mut content = vec![];
-    file.read_to_end(&mut content)?;
+    file_ref.read_to_end(&mut content)?;
 
-    let message = MessageData::File(
+    let message = file(
         path.file_name().unwrap().to_str().unwrap().to_string(),
         content,
     );
 
-    serialize_and_write(
-        stream,
-        StreamArrival::StreamMessage(StreamMessage::new(jwt, message)),
-    )
+    serialize_and_write(stream, stream_message(StreamMessage::new(jwt, message)))
 }

@@ -1,37 +1,25 @@
 use std::{
     fs::File,
-    io::{stdin, stdout, Write},
+    io::{stdout, Write},
     sync::Arc,
 };
 
-use crate::{
-    db::{
-        structs::{Message, User},
-        DB,
-    },
-    errors::deserialize_object_error,
-};
+use crate::db::{structs::Message, DB};
 use anyhow::Result;
 use chrono::Local;
 use clap::{arg, command, Parser};
-use init_macros::create_value_init_functions;
-use serde::{Deserialize, Serialize};
 
-use crate::errors::{handle_stream_error, DBError, ServerError, StreamError};
+use crate::errors::{deserialize_object_error, handle_stream_error, StreamError};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum MessageData {
-    Image(Vec<u8>),
-    File(String, Vec<u8>),
-    Text(String),
+mod structs;
+pub use structs::*;
+
+impl ServerResponse {
+    pub fn serialize(self) -> Vec<u8> {
+        serialize_server_response(self).unwrap()
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct MessageResponse {
-    id: i32,
-    user: User,
-    content: MessageData,
-}
 impl MessageResponse {
     pub fn from_db_message(message: &Message, db: &Arc<DB>) -> Result<Self, ErrorResponse> {
         let user = db.get_user(message.user_id).map_err(|e| db_error(e))?;
@@ -45,96 +33,14 @@ impl MessageResponse {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum ErrorResponse {
-    DBError(DBError),
-    ServerError(ServerError),
-}
-create_value_init_functions!(ErrorResponse, DBError(DBError), ServerError(ServerError));
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum ServerResponse {
-    Message(MessageResponse),
-    AuthToken(String),
-    Error(ErrorResponse),
-}
-create_value_init_functions!(
-    ServerResponse,
-    Message(MessageResponse),
-    AuthToken(String),
-    Error(ErrorResponse)
-);
-impl ServerResponse {
-    pub fn serialize(self) -> Vec<u8> {
-        serialize_server_response(self).unwrap()
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct StreamMessage {
-    pub jwt: String,
-    pub message: MessageData,
-}
-impl StreamMessage {
-    pub fn new(jwt: String, message: MessageData) -> Self {
-        StreamMessage { jwt, message }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum AuthRequestKind {
-    Login,
-    Register,
-}
-
-impl AuthRequestKind {
-    pub fn from_stdin() -> Self {
-        let mut input = String::new();
-        stdin().read_line(&mut input).unwrap();
-
-        match input.trim() {
-            "r" | "R" => AuthRequestKind::Register,
-            _ => AuthRequestKind::Login,
-        }
-    }
-}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct AuthRequest {
-    pub kind: AuthRequestKind,
-    pub username: String,
-    pub password: String,
-}
-
-impl AuthRequest {
-    pub fn new(kind: AuthRequestKind, username: String, password: String) -> Self {
-        AuthRequest {
-            kind,
-            username,
-            password,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ReadRequest {
-    pub jwt: String,
-    pub amount: i32,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum StreamArrival {
-    StreamMessage(StreamMessage),
-    AuthRequest(AuthRequest),
-    ReadRequest(ReadRequest),
-}
-
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
     #[arg(long, default_value = "localhost")]
-    hostname: String,
+    pub hostname: String,
 
     #[arg(long, default_value = "11111")]
-    port: String,
+    pub port: String,
 }
 
 pub fn get_address() -> String {

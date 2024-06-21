@@ -1,8 +1,8 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse::{Parse, ParseStream, Result};
-use syn::{parenthesized, Data, DeriveInput, Expr, Fields};
-use syn::{parse_macro_input, punctuated::Punctuated, Ident, Token, Type};
+use syn::parenthesized;
+use syn::{parse_macro_input, punctuated::Punctuated, Ident, Token};
 
 struct EnumInitInput {
     enum_name: Ident,
