@@ -126,6 +126,7 @@ impl DB {
         let messages: Vec<Message> = messages_table
             .order(id_field.desc())
             .limit(amount as i64)
+            .order(id_field.asc())
             .load(&mut conn)
             .map_err(|_| DBError::MessageHistoryError)?;
 

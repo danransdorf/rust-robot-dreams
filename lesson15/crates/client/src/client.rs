@@ -33,7 +33,7 @@ fn exit_program() {
 pub async fn start_client(address: String) {
     println!("Creating a client on address: {}", address);
 
-    let stream = TcpStream::connect(&address).unwrap();
+    let stream = TcpStream::connect(&address).expect("Failed to connect to the server, is the server live?");
     let mut stream_clone = stream.try_clone().unwrap();
 
     let jwt: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));

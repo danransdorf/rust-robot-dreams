@@ -1,8 +1,8 @@
 use proc_macro::TokenStream;
 use quote::quote;
+use syn::parenthesized;
 use syn::parse::{Parse, ParseStream, Result};
-use syn::{parenthesized, Data, DeriveInput, Expr, Fields};
-use syn::{parse_macro_input, punctuated::Punctuated, Ident, Token, Type};
+use syn::{parse_macro_input, punctuated::Punctuated, Ident, Token};
 
 struct EnumInitInput {
     enum_name: Ident,
@@ -48,8 +48,6 @@ pub fn create_error_init_functions(input: TokenStream) -> TokenStream {
     })
 }
 
-
-
 struct Variant {
     ident: Ident,
     types: Punctuated<Ident, Token![,]>,
@@ -84,7 +82,10 @@ impl Parse for EnumInitInput2 {
 
 #[proc_macro]
 pub fn create_value_init_functions(input: TokenStream) -> TokenStream {
-    let EnumInitInput2 { enum_name, variants } = parse_macro_input!(input as EnumInitInput2);
+    let EnumInitInput2 {
+        enum_name,
+        variants,
+    } = parse_macro_input!(input as EnumInitInput2);
 
     let mut functions = Vec::new();
 

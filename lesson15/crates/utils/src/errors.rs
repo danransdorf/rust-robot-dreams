@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::io::Error;
 use thiserror::Error;
 
+use init_macros::create_error_init_functions;
+
 #[derive(Error, Debug)]
 pub enum StreamError {
     #[error("Failed to create file")]
@@ -37,30 +39,6 @@ pub enum ClientError<S: AsRef<str>> {
     #[error("\nNo path provided in command {0}\n    Usage: {0} <path>")]
     PathError(S),
 }
-/*
-pub fn handle_file_error(e: Error) {
-    eprintln!("Failed to handle file: {}", e)
-}
-
-pub fn handle_image_error(e: Error) {
-    eprintln!("Failed to handle image: {}", e)
-}
-
-pub fn handle_text_error(e: Error) {
-    eprintln!("Failed to handle text: {}", e)
-}
-
-pub fn no_path_error(command: &'static str) {
-    eprintln!(
-        "\nNo path provided in command {0}\n    Usage: {0} <path>",
-        command
-    );
-}
-
-pub fn write_stream_error(e: Error) {
-    eprintln!("Write to stream failed: {}", e)
-}
- */
 
 #[derive(Serialize, Deserialize, Debug, Clone, Error)]
 pub enum DBError {
@@ -113,8 +91,6 @@ impl ServerError {
         bincode::deserialize(data).unwrap()
     }
 }
-
-use init_macros::create_error_init_functions;
 
 create_error_init_functions!(
     DBError,

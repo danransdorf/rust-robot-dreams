@@ -1,4 +1,3 @@
--- Your SQL goes here
 CREATE TABLE messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INT NOT NULL,

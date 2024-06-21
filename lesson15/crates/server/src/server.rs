@@ -5,16 +5,24 @@ use tokio;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
+use jsonwebtoken::{
+    decode, encode, get_current_timestamp, Algorithm, DecodingKey, EncodingKey, Header, Validation,
+};
+use serde::{Deserialize, Serialize};
+
 use utils::{
     auth_token, db_error, error, message, server_error, AuthRequest, AuthRequestKind,
-    ErrorResponse, MessageResponse, ServerResponse, StreamMessage,
+    MessageResponse, ServerResponse, StreamMessage,
 };
-
 use utils::errors::{
-    handle_stream_error, invalid_credentials, invalid_token, username_used, ServerError,
-    StreamError,
+    handle_stream_error, invalid_credentials, invalid_token, username_used, StreamError,
 };
 use utils::{deserialize_stream, StreamArrival};
+use utils::db::DB;
+
+static ONE_MINUTE: u64 = 60;
+static ONE_HOUR: u64 = 60 * ONE_MINUTE;
+static ONE_DAY: u64 = 24 * ONE_HOUR;
 
 type WriteHalfArc = Arc<Mutex<WriteHalf<TcpStream>>>;
 struct Client {
@@ -27,17 +35,6 @@ impl Client {
     }
 }
 type StreamsHashMap = HashMap<SocketAddr, Client>;
-
-use utils::db::DB;
-
-use jsonwebtoken::{
-    decode, encode, get_current_timestamp, Algorithm, DecodingKey, EncodingKey, Header, Validation,
-};
-use serde::{Deserialize, Serialize};
-
-static ONE_MINUTE: u64 = 60;
-static ONE_HOUR: u64 = 60 * ONE_MINUTE;
-static ONE_DAY: u64 = 24 * ONE_HOUR;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
@@ -136,10 +133,10 @@ pub async fn start_server(address: String) {
 
                                 match message_response_res {
                                     Ok(message_response) => {
-                                        spawn_write_task(&writer, message(message_response));
+                                        await_write_task(&writer, message(message_response)).await;
                                     }
                                     Err(error_response) => {
-                                        spawn_write_task(&writer, error(error_response));
+                                        await_write_task(&writer, error(error_response)).await;
                                     }
                                 }
                             }
@@ -170,6 +167,14 @@ async fn write_into_stream(
     locked_writer.write_all(content).await?;
 
     Ok(())
+}
+
+async fn await_write_task(writer: &Arc<Mutex<WriteHalf<TcpStream>>>, response: ServerResponse) {
+    let content = response.serialize();
+    write_into_stream(writer, &content)
+        .await
+        .map_err(|e| println!("{}", e))
+        .ok();
 }
 
 fn spawn_write_task(writer: &Arc<Mutex<WriteHalf<TcpStream>>>, response: ServerResponse) {
@@ -297,11 +302,9 @@ async fn handle_stream_message(
 
     for (addr, client) in clients.lock().await.iter() {
         if *addr != client_addr {
-            println!("Sending message to {}, token: {}", addr, &client.token);
             match Claims::from_token(&client.token, jwt_secret) {
                 Ok(_) => match MessageResponse::from_db_message(&message_obj, &db) {
                     Ok(message_response) => {
-                        println!("Should send message");
                         spawn_write_task(&client.writer, message(message_response));
                     }
                     Err(error_response) => spawn_write_task(&writer, error(error_response)),
