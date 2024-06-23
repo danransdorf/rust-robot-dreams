@@ -9,10 +9,11 @@ use image as image_crate;
 use image_crate::ImageFormat;
 
 use crate::{
-    errors::invalid_input_error, file, image, serialize_stream, stream_message, StreamRequest,
+    errors::invalid_input_error, file, image, message_request, serialize_stream, StreamRequest,
 };
 use crate::{utils::MessageContent, MessageRequest};
 
+/// Get the image from the path and convert into a MessageContent
 fn get_image(path: &Path) -> Result<MessageContent, Error> {
     let img = match image_crate::open(path) {
         Err(_) => {
@@ -31,6 +32,11 @@ fn get_image(path: &Path) -> Result<MessageContent, Error> {
     Ok(image(buf))
 }
 
+/// Write the content into the stream
+///
+/// # Arguments
+/// * `stream` - The stream to write into
+/// * `content` - The content to write
 fn write_into_stream(mut stream: &TcpStream, content: &[u8]) -> std::io::Result<()> {
     let len_bytes = (content.len() as u32).to_be_bytes();
 
@@ -40,16 +46,27 @@ fn write_into_stream(mut stream: &TcpStream, content: &[u8]) -> std::io::Result<
     Ok(())
 }
 
-pub fn serialize_and_write(stream: &TcpStream, obj: StreamRequest) -> std::io::Result<()> {
-    let serialized_string = match serialize_stream(obj) {
+/// Serialize the object and write it into the stream
+///
+/// # Arguments
+/// * `stream` - The stream to write into
+/// * `request` - The request object to serialize and write
+pub fn serialize_and_write(stream: &TcpStream, request: StreamRequest) -> std::io::Result<()> {
+    let serialized_string = match serialize_stream(request) {
         Ok(string) => string,
         _ => {
-            return Err(invalid_input_error("Unable to serialize object"));
+            return Err(invalid_input_error("Unable to serialize the request"));
         }
     };
     write_into_stream(stream, &serialized_string)
 }
 
+/// Handle the image at the path and write it into the stream
+///
+/// # Arguments
+/// * `stream` - The stream to write into
+/// * `path_string` - The path to the image
+/// * `jwt` - The JWT auth token
 pub fn handle_image(stream: &TcpStream, path_string: &str, jwt: String) -> std::io::Result<()> {
     let path = Path::new(path_string);
 
@@ -60,9 +77,15 @@ pub fn handle_image(stream: &TcpStream, path_string: &str, jwt: String) -> std::
         }
     };
 
-    serialize_and_write(stream, stream_message(MessageRequest::new(jwt, message)))
+    serialize_and_write(stream, message_request(MessageRequest::new(jwt, message)))
 }
 
+/// Handle the file at the path and write it into the stream
+///
+/// # Arguments
+/// * `stream` - The stream to write into
+/// * `path_string` - The path to the file
+/// * `jwt` - The JWT auth token
 pub fn handle_file(stream: &TcpStream, path_string: &str, jwt: String) -> std::io::Result<()> {
     let path = Path::new(path_string);
 
@@ -75,5 +98,5 @@ pub fn handle_file(stream: &TcpStream, path_string: &str, jwt: String) -> std::i
         content,
     );
 
-    serialize_and_write(stream, stream_message(MessageRequest::new(jwt, message)))
+    serialize_and_write(stream, message_request(MessageRequest::new(jwt, message)))
 }

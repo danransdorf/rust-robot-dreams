@@ -6,7 +6,7 @@ use std::{
 use tokio::sync::{Mutex, Notify};
 
 use utils::{
-    auth_request, deserialize_server_response, output_message_data, read_request, stream_message,
+    auth_request, deserialize_server_response, message_request, output_message_data, read_request,
     text, AuthRequest, AuthRequestKind, ErrorResponse, MessageRequest, ServerResponse,
 };
 use utils::{errors::ClientError, ReadRequest};
@@ -15,6 +15,7 @@ use utils::{
     write_utils::{handle_file, handle_image, serialize_and_write},
 };
 
+/// Prints the help message
 fn print_help() {
     println!("Possible commands:");
     println!("    .file <path> - Send a file located at <path> to the chat");
@@ -24,11 +25,13 @@ fn print_help() {
     println!("    .help - Display this help message");
 }
 
+/// Exits the program
 fn exit_program() {
     println!("Exiting program...");
     std::process::exit(0x0100);
 }
 
+/// Starts the client
 pub async fn start_client(address: String) {
     println!("Creating a client on address: {}", address);
 
@@ -99,14 +102,11 @@ pub async fn start_client(address: String) {
         let jwt_lock = jwt_clone.lock().await.clone();
         match &jwt_lock {
             None => {
-                let (auth_method, (username, password)) = prompt_auth();
+                let auth_request_content = prompt_auth();
 
-                serialize_and_write(
-                    &stream,
-                    auth_request(AuthRequest::new(auth_method, username, password)),
-                )
-                .map_err(|e| eprintln!("{}", e))
-                .ok();
+                serialize_and_write(&stream, auth_request(auth_request_content))
+                    .map_err(|e| eprintln!("{}", e))
+                    .ok();
 
                 notify.notified().await;
             }
@@ -165,7 +165,7 @@ pub async fn start_client(address: String) {
                     _ => {
                         serialize_and_write(
                             &stream,
-                            stream_message(MessageRequest::new(
+                            message_request(MessageRequest::new(
                                 jwt_token.to_owned(),
                                 text(input_string),
                             )),
@@ -179,7 +179,8 @@ pub async fn start_client(address: String) {
     }
 }
 
-fn prompt_auth() -> (AuthRequestKind, (String, String)) {
+/// Prompts the user for authentication details
+fn prompt_auth() -> AuthRequest {
     println!("Do you want to log in or register? [L/r]");
     let auth_method = AuthRequestKind::from_stdin();
 
@@ -200,8 +201,9 @@ fn prompt_auth() -> (AuthRequestKind, (String, String)) {
     println!("Enter password:");
     stdin().read_line(&mut password).unwrap();
 
-    (
+    AuthRequest::new(
         auth_method,
-        (username.trim().to_string(), password.trim().to_string()),
+        username.trim().to_string(),
+        password.trim().to_string(),
     )
 }

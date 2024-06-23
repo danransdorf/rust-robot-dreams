@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Error;
 use thiserror::Error;
 
-use init_macros::create_error_init_functions;
+use init_macros::create_enum_init_functions;
 
 #[derive(Error, Debug)]
 pub enum StreamError {
@@ -92,7 +92,7 @@ impl ServerError {
     }
 }
 
-create_error_init_functions!(
+create_enum_init_functions!(
     DBError,
     PoolCreationError,
     ConnectionError,
@@ -103,7 +103,7 @@ create_error_init_functions!(
     UserNotFoundError,
     PasswordVerificationError
 );
-create_error_init_functions!(
+create_enum_init_functions!(
     ServerError,
     InvalidToken,
     SerializeObjectError,

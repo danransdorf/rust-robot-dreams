@@ -14,6 +14,7 @@ static DB_PATH: &'static str = "chat.db";
 
 type SqlitePool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
 
+/// The database struct
 pub struct DB {
     pool: SqlitePool,
 }
@@ -21,6 +22,7 @@ pub struct DB {
 use anyhow::Result;
 
 impl DB {
+    /// Create a new database struct using the SQLite database at ./chat.db
     pub fn new() -> Result<Self> {
         println!("Creating/reading database chat.db");
         let manager = ConnectionManager::<SqliteConnection>::new(DB_PATH);
@@ -30,6 +32,7 @@ impl DB {
         Ok(Self { pool })
     }
 
+    /// Create a new user with the given username and password
     pub fn create_user(&self, username: String, password: String) -> Result<User> {
         use schema::users::dsl::{id as id_field, users as users_table};
 
@@ -59,6 +62,8 @@ impl DB {
 
         Ok(user)
     }
+
+    /// Get the user id of the given username
     pub fn get_user_id(&self, username: &str) -> Result<i32> {
         use schema::users::dsl::{username as username_field, users as users_table};
 
@@ -71,6 +76,7 @@ impl DB {
         Ok(user.id.unwrap())
     }
 
+    /// Check if the given password is correct for the given username
     pub fn check_password(&self, username: &str, password: &str) -> Result<bool, DBError> {
         use schema::users::dsl::{username as username_field, users as users_table};
 
@@ -86,6 +92,7 @@ impl DB {
         Ok(verified)
     }
 
+    /// Save a message from the given user
     pub fn save_message(&self, user_id: i32, message: MessageContent) -> Result<Message> {
         use schema::messages::dsl::{id as id_field, messages as messages_table};
 
@@ -107,6 +114,7 @@ impl DB {
         Ok(message)
     }
 
+    /// Get the info of a user with the given id
     pub fn get_user(&self, user_id: i32) -> Result<User, DBError> {
         use schema::users::dsl::{id as id_field, users as users_table};
 
@@ -119,6 +127,10 @@ impl DB {
         Ok(user)
     }
 
+    /// Get the history of messages
+    ///
+    /// # Arguments
+    /// * `amount` - The number of messages to read
     pub fn read_history(&self, amount: i32) -> Result<Vec<Message>> {
         use schema::messages::dsl::{id as id_field, messages as messages_table};
 

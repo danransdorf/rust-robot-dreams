@@ -20,11 +20,20 @@ use utils::{
 };
 use utils::{deserialize_stream, StreamRequest};
 
+/// The amount of seconds in a minute
 static ONE_MINUTE: u64 = 60;
+/// The amount of seconds in an hour
 static ONE_HOUR: u64 = 60 * ONE_MINUTE;
+/// The amount of seconds in a day
 static ONE_DAY: u64 = 24 * ONE_HOUR;
 
+/// The type of the writer half of the stream
 type WriteHalfArc = Arc<Mutex<WriteHalf<TcpStream>>>;
+/// The type of the client
+///
+/// # Fields
+/// * `writer` - The writer half of the stream
+/// * `token` - The JWT token of the client
 struct Client {
     writer: WriteHalfArc,
     token: String,
@@ -34,11 +43,17 @@ impl Client {
         Client { writer, token }
     }
 }
+/// The type of the connected clients hashmap
 type StreamsHashMap = HashMap<SocketAddr, Client>;
 
+/// The claims of the JWT token
+///
+/// # Fields
+/// * `sub` - User ID
+/// * `exp` - Expiration time (in seconds from UNIX epoch)
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
-    /** User ID */
+    /// User ID
     pub sub: i32,
     pub exp: u64,
 }
@@ -47,11 +62,20 @@ impl Claims {
     pub fn new(user_id: i32, exp: u64) -> Self {
         Claims { sub: user_id, exp }
     }
+    /// Decodes the token and returns the claims
+    ///
+    /// # Arguments
+    /// * `token` - The token to decode
+    /// * `secret` - The secret to decode the token with
     pub fn from_token(token: &str, secret: &[u8]) -> Result<Self, jsonwebtoken::errors::Error> {
         let validation = Validation::new(Algorithm::HS256);
         let token_data = decode::<Claims>(token, &DecodingKey::from_secret(secret), &validation)?;
         Ok(token_data.claims)
     }
+    /// Encodes the claims into a token
+    ///
+    /// # Arguments
+    /// * `secret` - The secret to encode the token with
     pub fn get_token(&self, secret: &[u8]) -> Result<String, jsonwebtoken::errors::Error> {
         let header = Header::new(Algorithm::HS256);
         let token = encode(&header, &self, &EncodingKey::from_secret(secret))?;
@@ -89,9 +113,9 @@ pub async fn start_server(address: String) {
             loop {
                 match handle_stream(&reader).await {
                     Ok(stream_arrival) => match stream_arrival {
-                        StreamRequest::MessageRequest(stream_message) => {
-                            handle_stream_message(
-                                stream_message,
+                        StreamRequest::MessageRequest(message_request) => {
+                            handle_message_request(
+                                message_request,
                                 &writer,
                                 &clients_clone,
                                 client_addr,
@@ -318,21 +342,21 @@ fn handle_register(
 ///
 /// # Arguments
 ///
-/// * `stream_message` - The message
+/// * `message_request` - The message
 /// * `writer` - The stream writer (for response)
 /// * `clients` - The clients hashmap
 /// * `client_addr` - The sending client's address
 /// * `db` - The database
 /// * `jwt_secret` - The JWT secret
-async fn handle_stream_message(
-    stream_message: MessageRequest,
+async fn handle_message_request(
+    message_request: MessageRequest,
     writer: &Arc<Mutex<WriteHalf<TcpStream>>>,
     clients: &Arc<Mutex<StreamsHashMap>>,
     client_addr: SocketAddr,
     db: &Arc<DB>,
     jwt_secret: &[u8; 32],
 ) {
-    let user_id = match Claims::from_token(&stream_message.jwt, jwt_secret) {
+    let user_id = match Claims::from_token(&message_request.jwt, jwt_secret) {
         Ok(claims) => claims.sub,
         _ => {
             eprintln!("Invalid token");
@@ -342,7 +366,7 @@ async fn handle_stream_message(
     };
 
     let message_obj = db
-        .save_message(user_id, stream_message.message.clone())
+        .save_message(user_id, message_request.message.clone())
         .unwrap();
 
     for (addr, client) in clients.lock().await.iter() {

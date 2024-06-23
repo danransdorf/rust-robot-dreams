@@ -10,3 +10,4 @@ proc-macro = true
 quote = "1.0"
 syn = "2.0.66"
 convert_case = "0.6.0"
+proc-macro2 = "1.0.86"

@@ -21,8 +21,26 @@ impl Parse for EnumInitInput {
     }
 }
 
+/// Create shorter inits for enums without fields
+///
+/// # Example
+///
+/// ```
+/// create_enum_init_functions!(DBError, UserNotFound, ConnectionError, UserInsertionError);
+/// ```
+/// generates
+/// ```
+/// pub fn user_not_found() -> DBError {
+///     DBError::UserNotFound
+/// }
+/// pub fn connection_error() -> DBError {
+///     DBError::ConnectionError
+/// }
+/// pub fn user_insertion_error() -> DBError {
+///     DBError::UserInsertionError
+/// }
 #[proc_macro]
-pub fn create_error_init_functions(input: TokenStream) -> TokenStream {
+pub fn create_enum_init_functions(input: TokenStream) -> TokenStream {
     let EnumInitInput {
         enum_name,
         variants,
@@ -80,8 +98,32 @@ impl Parse for EnumInitInput2 {
     }
 }
 
+/// Create shorter inits for enums with variants that have fields
+///
+/// # Example
+///
+/// ```
+/// create_valueenum_init_functions!(
+///     ServerResponse,
+///     Message(MessageResponse),
+///     AuthToken(String),
+///     Error(ErrorResponse)
+/// );
+/// ```
+/// generates
+/// ```
+/// pub fn message(message_response) -> ServerResponse {
+///     ServerResponse::Message(message_response)
+/// }
+/// pub fn auth_token(auth_token) -> ServerResponse {
+///     ServerResponse::AuthToken(auth_token)
+/// }
+/// pub fn error(error_response) -> ServerResponse {
+///     ServerResponse::Error(error_response)
+/// }
+/// ```
 #[proc_macro]
-pub fn create_value_init_functions(input: TokenStream) -> TokenStream {
+pub fn create_valueenum_init_functions(input: TokenStream) -> TokenStream {
     let EnumInitInput2 {
         enum_name,
         variants,
