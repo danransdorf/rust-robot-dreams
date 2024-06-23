@@ -21,6 +21,11 @@ impl ServerResponse {
 }
 
 impl MessageResponse {
+    /// Initializes a MessageResponse from a database message row.
+    ///
+    /// # Arguments
+    /// * `message` - The message row from the database.
+    /// * `db` - The database connection.
     pub fn from_db_message(message: &Message, db: &Arc<DB>) -> Result<Self, ErrorResponse> {
         let user = db.get_user(message.user_id).map_err(|e| db_error(e))?;
         let content = deserialize_data(message.content.to_owned())
@@ -33,6 +38,7 @@ impl MessageResponse {
     }
 }
 
+/// Represents the CLI arguments
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
@@ -43,39 +49,54 @@ struct Args {
     pub port: String,
 }
 
+/// Parses the address from the CLI arguments
 pub fn get_address() -> String {
     let args = Args::parse();
 
     format!("{}:{}", args.hostname, args.port)
 }
 
+/// Flushes a message to the output
 pub fn flush(message: &str) {
     writeln!(&mut stdout(), "{}", message).expect("Failed to write to output");
     stdout().flush().expect("Failed to flush output");
 }
 
+/// Serializes message content
 pub fn serialize_data(data: MessageContent) -> Result<Vec<u8>, bincode::Error> {
     bincode::serialize(&data)
 }
+/// Deserializes message content
 pub fn deserialize_data(data: Vec<u8>) -> Result<MessageContent, bincode::Error> {
     bincode::deserialize(&data)
 }
 
+/// Serializes a response form the server (ServerResponse)
 pub fn serialize_server_response(data: ServerResponse) -> Result<Vec<u8>, bincode::Error> {
     bincode::serialize(&data)
 }
+/// Deserializes a response form the server (ServerResponse)
 pub fn deserialize_server_response(data: Vec<u8>) -> Result<ServerResponse, bincode::Error> {
     bincode::deserialize(&data)
 }
 
+/// Serializes a request to the server (StreamRequest)
 pub fn serialize_stream(stream: StreamRequest) -> Result<Vec<u8>, bincode::Error> {
     bincode::serialize(&stream)
 }
+/// Deserializes a request to the server (StreamRequest)
 pub fn deserialize_stream(stream: Vec<u8>) -> Result<StreamRequest, bincode::Error> {
     bincode::deserialize(&stream)
 }
 
+/// Index of a timestamp string where seconds end, milliseconds start
+///
+/// # Slice timestamp just to seconds
+/// ```
+/// &chrono::Local::now().to_string()[..SECONDS_INDEX]
+/// ```
 static SECONDS_INDEX: usize = 19;
+/// Save an image sent in a message to the filesystem
 pub fn save_image(bytes: &Vec<u8>) -> Result<String, StreamError> {
     let timestamp = &Local::now().to_string()[..SECONDS_INDEX];
     let filename = format!("{}.png", timestamp);
@@ -90,6 +111,7 @@ pub fn save_image(bytes: &Vec<u8>) -> Result<String, StreamError> {
     Ok(filename)
 }
 
+/// Save a file sent in a message to the filesystem
 pub fn save_file(filename: &str, bytes: &Vec<u8>) -> Result<String, StreamError> {
     std::fs::create_dir_all("files").map_err(StreamError::FileCreationError)?;
 
@@ -101,6 +123,7 @@ pub fn save_file(filename: &str, bytes: &Vec<u8>) -> Result<String, StreamError>
     Ok(filename.to_string())
 }
 
+/// Output a message to the console
 pub fn output_message_data(message_data: MessageResponse) {
     match message_data.content {
         MessageContent::File(filename, bytes) => {
@@ -131,8 +154,4 @@ pub fn output_message_data(message_data: MessageResponse) {
             flush(&format!("{}: {}", message_data.user.username, string));
         }
     }
-}
-
-pub fn unspecified_error() -> Result<(), std::io::Error> {
-    return Err(std::io::Error::new(std::io::ErrorKind::Other, ""));
 }
