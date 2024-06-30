@@ -1,0 +1,11 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+utils = { path = "../utils" }
+tokio = { version = "1.37.0", features = ["full"] }
+yew = { git = "https://github.com/yewstack/yew/", features = ["csr"] }
+base64 = "0.22.1"
+mime_guess = "2.0.5"
