@@ -17,16 +17,15 @@ pub enum MessageContent {
 }
 
 // My macros don't support generics, so I have to manually implement these init functions
-
-/// Equivalent to writing out MessageData::Image(vec)
+/// Equivalent to writing out MessageContent::Image(vec)
 pub fn image(vec: Vec<u8>) -> MessageContent {
     MessageContent::Image(vec)
 }
-/// Equivalent to writing out MessageData::File(filename, vec)
+/// Equivalent to writing out MessageContent::File(filename, vec)
 pub fn file(filename: String, vec: Vec<u8>) -> MessageContent {
     MessageContent::File(filename, vec)
 }
-/// Equivalent to writing out MessageData::Text(text)
+/// Equivalent to writing out MessageContent::Text(text)
 pub fn text(text: String) -> MessageContent {
     MessageContent::Text(text)
 }
