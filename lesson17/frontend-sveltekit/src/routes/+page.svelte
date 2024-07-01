@@ -1,20 +1,23 @@
 <script lang="ts">
+	import { connect_ws } from '$lib/socket';
+
 	let connected = false;
-	let ws;
 
 	let address: string;
 
 	const connect = () => {
-		ws = new WebSocket(address || 'ws://localhost:3000');
-		ws.onopen = () => {
-			connected = true;
-		};
-		ws.onmessage = (event) => {
-			console.log(event.data);
-		};
-		ws.onclose = () => {
-			connected = false;
-		};
+		connect_ws(
+			address,
+			() => {
+				connected = true;
+			},
+			(event) => {
+				console.log(event.data);
+			},
+			() => {
+				connected = false;
+			}
+		);
 	};
 </script>
 

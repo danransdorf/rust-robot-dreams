@@ -52,9 +52,7 @@ fn app(props: &Props) -> Html {
     let jwt: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let jwt_clone = Arc::clone(&jwt);
 
-    let messages = Arc::new(Mutex::new(use_state(|| {
-        BTreeMap::<i32, MessageResponse>::new()
-    })));
+    let messages = use_state(|| BTreeMap::<i32, MessageResponse>::new());
     let messages_a = messages.clone();
 
     spawn_local(async move {
@@ -102,9 +100,9 @@ fn app(props: &Props) -> Html {
                     };
                 }
                 ServerResponse::Message(message) => {
-                    let mut messages_clone = messages_a.lock().unwrap().clone().deref().to_owned();
+                    let mut messages_clone = messages_a.clone().deref().to_owned();
                     messages_clone.insert(message.id, message);
-                    messages_a.lock().unwrap().set(messages_clone);
+                    messages_a.set(messages_clone);
                 }
             }
         }
@@ -190,8 +188,6 @@ fn app(props: &Props) -> Html {
         }
     });
 
-    
-
     html! {
         <div>
             <h1>{"Chat App"}</h1>
@@ -201,7 +197,7 @@ fn app(props: &Props) -> Html {
                     <h2>{"Messages"}</h2>
                     <div class="flex flex-col gap-4 items-center">
                         {
-                            messages.lock().unwrap().iter().map(|(_, message)| {
+                            messages.iter().map(|(_, message)| {
                                 html! {
                                     <div class="flex flex-col gap-2 items-center">
                                         <p>{match &message.content {
@@ -229,8 +225,6 @@ fn app(props: &Props) -> Html {
         </div>
     }
 }
-
-
 
 pub fn run_app(address: String) {
     yew::Renderer::<App>::with_props(Props { address }).render();

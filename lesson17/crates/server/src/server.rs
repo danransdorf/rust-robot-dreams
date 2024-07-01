@@ -1,3 +1,4 @@
+use futures_util::stream::{SplitSink, SplitStream};
 use jsonwebtoken::{
     decode, encode, get_current_timestamp, Algorithm, DecodingKey, EncodingKey, Header, Validation,
 };
@@ -6,10 +7,14 @@ use serde::{Deserialize, Serialize};
 use std::io::Error;
 use std::{collections::HashMap, io::ErrorKind, net::SocketAddr, sync::Arc};
 use tokio;
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+use tokio::net::tcp::{ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
+use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::{accept_async, tungstenite::Message};
 
+use futures_util::{SinkExt, StreamExt};
 use utils::db::DB;
 use utils::errors::{
     handle_stream_error, invalid_credentials, invalid_token, username_used, StreamError,
@@ -27,24 +32,23 @@ static ONE_HOUR: u64 = 60 * ONE_MINUTE;
 /// The amount of seconds in a day
 static ONE_DAY: u64 = 24 * ONE_HOUR;
 
-/// The type of the writer half of the stream
-type WriteHalfArc = Arc<Mutex<WriteHalf<TcpStream>>>;
+type WSWriter = SplitSink<WebSocketStream<TcpStream>, Message>;
+type WSReader = SplitStream<WebSocketStream<TcpStream>>;
+
 /// The type of the client
 ///
 /// # Fields
 /// * `writer` - The writer half of the stream
 /// * `token` - The JWT token of the client
 struct Client {
-    writer: WriteHalfArc,
+    writer: Arc<Mutex<WSWriter>>,
     token: String,
 }
 impl Client {
-    pub fn new(writer: WriteHalfArc, token: String) -> Self {
+    pub fn new(writer: Arc<Mutex<WSWriter>>, token: String) -> Self {
         Client { writer, token }
     }
 }
-/// The type of the connected clients hashmap
-type StreamsHashMap = HashMap<SocketAddr, Client>;
 
 /// The claims of the JWT token
 ///
@@ -90,20 +94,22 @@ pub async fn start_server(address: String) {
 
     let db = Arc::new(DB::new().unwrap());
 
-    println!("Creating a server on address: {}", address);
+    println!("Creating a WebSocket server on address: {}", address);
     let listener = TcpListener::bind(address).await.unwrap();
 
-    let clients: Arc<Mutex<StreamsHashMap>> = Arc::new(Mutex::new(HashMap::new()));
+    let clients: Arc<Mutex<HashMap<SocketAddr, Client>>> = Arc::new(Mutex::new(HashMap::new()));
     loop {
         let (stream, client_addr) = listener.accept().await.unwrap();
-        let (rd, wr) = io::split(stream);
+        let mut ws_stream = accept_async(stream).await.expect("Failed to accept");
+        let (wr, rd) = ws_stream.split();
+
         let reader = Arc::new(Mutex::new(rd));
         let writer = Arc::new(Mutex::new(wr));
 
-        clients
-            .lock()
-            .await
-            .insert(client_addr, Client::new(Arc::clone(&writer), String::new()));
+        clients.lock().await.insert(
+            client_addr,
+            Client::new(Arc::clone(&writer).clone(), String::new()),
+        );
 
         println!("Stream opened (addr: {})", client_addr);
 
@@ -186,15 +192,9 @@ pub async fn start_server(address: String) {
 ///
 /// * `writer` - The writer to write into
 /// * `content` - The content to write
-async fn write_into_stream(
-    writer: &Arc<Mutex<WriteHalf<TcpStream>>>,
-    content: &[u8],
-) -> std::io::Result<()> {
-    let len_bytes = (content.len() as u32).to_be_bytes();
-
+async fn write_into_stream(writer: &Arc<Mutex<WSWriter>>, content: Vec<u8>) -> Result<(), tokio_tungstenite::tungstenite::Error> {
     let mut locked_writer = writer.lock().await;
-    locked_writer.write(&len_bytes).await?;
-    locked_writer.write_all(content).await?;
+    locked_writer.send(Message::Binary(content)).await?;
 
     Ok(())
 }
@@ -205,9 +205,9 @@ async fn write_into_stream(
 ///
 /// * `writer` - The writer to write into
 /// * `response` - The response to write
-async fn await_write_task(writer: &Arc<Mutex<WriteHalf<TcpStream>>>, response: ServerResponse) {
+async fn await_write_task(writer: &Arc<Mutex<WSWriter>>, response: ServerResponse) {
     let content = response.serialize();
-    write_into_stream(writer, &content)
+    write_into_stream(writer, content)
         .await
         .map_err(|e| println!("{}", e))
         .ok();
@@ -219,11 +219,11 @@ async fn await_write_task(writer: &Arc<Mutex<WriteHalf<TcpStream>>>, response: S
 ///
 /// * `writer` - The writer to write into
 /// * `response` - The response to write
-fn spawn_write_task(writer: &Arc<Mutex<WriteHalf<TcpStream>>>, response: ServerResponse) {
+fn spawn_write_task(writer: &Arc<Mutex<WSWriter>>, response: ServerResponse) {
     let content = response.serialize();
     let writer = Arc::clone(writer);
     tokio::spawn(async move {
-        write_into_stream(&writer, &content)
+        write_into_stream(&writer, content)
             .await
             .map_err(|e| println!("{}", e))
             .ok();
@@ -235,13 +235,15 @@ fn spawn_write_task(writer: &Arc<Mutex<WriteHalf<TcpStream>>>, response: ServerR
 /// # Arguments
 ///
 /// * `reader` - The stream reader
-async fn handle_stream(
-    reader: &Arc<Mutex<ReadHalf<TcpStream>>>,
-) -> Result<StreamRequest, StreamError> {
+async fn handle_stream(reader: &Arc<Mutex<WSReader>>) -> Result<StreamRequest, StreamError> {
     let mut locked_reader = reader.lock().await;
 
-    let mut len_buffer = [0; 4];
-    locked_reader
+
+    let received = match locked_reader.next().await {
+        Some(Ok(Message::Binary(data))) => data,
+        _ => return Err(StreamError::StreamClosed),
+    };
+/*     locked_reader
         .read_exact(&mut len_buffer)
         .await
         .map_err(|_| StreamError::StreamClosed)?;
@@ -252,11 +254,11 @@ async fn handle_stream(
     locked_reader
         .read_exact(&mut buffer)
         .await
-        .map_err(StreamError::ReadMessageError)?;
+        .map_err(StreamError::ReadMessageError)?; */
 
     drop(locked_reader); // Manually drop just to be sure
 
-    let stream_arrival = deserialize_stream(buffer).map_err(|_| {
+    let stream_arrival = deserialize_stream(received).map_err(|_| {
         StreamError::ReadMessageError(Error::new(ErrorKind::InvalidData, "Failed to deserialize"))
     })?;
 
@@ -272,7 +274,7 @@ async fn handle_stream(
 /// * `auth_request` - The auth request
 /// * `jwt_secret` - The JWT secret
 fn handle_login(
-    writer: &Arc<Mutex<WriteHalf<TcpStream>>>,
+    writer: &Arc<Mutex<WSWriter>>,
     db: &Arc<DB>,
     auth_request: AuthRequest,
     jwt_secret: &[u8; 32],
@@ -314,7 +316,7 @@ fn handle_login(
 /// * `auth_request` - The auth request
 /// * `jwt_secret` - The JWT secret
 fn handle_register(
-    writer: &Arc<Mutex<WriteHalf<TcpStream>>>,
+    writer: &Arc<Mutex<WSWriter>>,
     db: &Arc<DB>,
     auth_request: AuthRequest,
     jwt_secret: &[u8; 32],
@@ -349,8 +351,8 @@ fn handle_register(
 /// * `jwt_secret` - The JWT secret
 async fn handle_message_request(
     message_request: MessageRequest,
-    writer: &Arc<Mutex<WriteHalf<TcpStream>>>,
-    clients: &Arc<Mutex<StreamsHashMap>>,
+    writer: &Arc<Mutex<WSWriter>>,
+    clients: &Arc<Mutex<HashMap<SocketAddr, Client>>>,
     db: &Arc<DB>,
     jwt_secret: &[u8; 32],
 ) {
