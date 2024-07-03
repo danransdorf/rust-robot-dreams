@@ -13,7 +13,7 @@
 	import Cookies from 'js-cookie';
 
 	let connected = false;
-	let authToken = /* Cookies.get('authToken') ??  */ '';
+	let authToken = Cookies.get('authToken') ??  '';
 
 	let messages: ProcessedMessage[] = [];
 
