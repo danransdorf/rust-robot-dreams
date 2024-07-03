@@ -27,7 +27,8 @@ impl MessageResponse {
             .map_err(|_| server_error(deserialize_object_error()))?;
         Ok(MessageResponse {
             id: message.id.unwrap(),
-            user,
+            username: user.username,
+            user_id: message.user_id,
             content,
         })
     }
@@ -107,7 +108,7 @@ pub fn output_message_data(message_data: MessageResponse) {
             match save_file(&filename, &bytes) {
                 Ok(filename) => flush(&format!(
                     "{}: sent a file {}",
-                    message_data.user.username, filename
+                    message_data.username, filename
                 )),
                 Err(e) => {
                     flush("Received file, but failed to save it");
@@ -119,7 +120,7 @@ pub fn output_message_data(message_data: MessageResponse) {
             match save_image(&bytes) {
                 Ok(filename) => flush(&format!(
                     "{}: sent an image {}",
-                    message_data.user.username, filename
+                    message_data.username, filename
                 )),
                 Err(e) => {
                     flush("Received image, but failed to save it");
@@ -128,7 +129,7 @@ pub fn output_message_data(message_data: MessageResponse) {
             };
         }
         MessageContent::Text(string) => {
-            flush(&format!("{}: {}", message_data.user.username, string));
+            flush(&format!("{}: {}", message_data.username, string));
         }
     }
 }

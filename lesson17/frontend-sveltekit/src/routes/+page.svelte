@@ -2,79 +2,22 @@
 	import Chat from '$lib/components/Chat.svelte';
 	import Connect from '$lib/components/Connect.svelte';
 	import Login from '$lib/components/Login.svelte';
+	import { processMessage } from '$lib/utils';
 	import { connectWebsocket } from '$lib/utils/socket';
 	import {
-		isFileVariant,
-		isImageVariant,
 		isMessageServerResponse,
-		isTextVariant,
-		type MessageResponse,
+		type ProcessedMessage,
 		type ServerResponse,
 		type StreamRequest
 	} from '$lib/utils/types';
 	import Cookies from 'js-cookie';
 
 	let connected = false;
-	let authToken = Cookies.get('authToken') ?? '';
+	let authToken = /* Cookies.get('authToken') ??  */ '';
 
-	let messages: MessageResponse[] = [];
+	let messages: ProcessedMessage[] = [];
 
 	let ws: WebSocket | null = null;
-
-	const processMessage = (message: MessageResponse) => {
-		if (isImageVariant(message.content)) {
-			const base64 = btoa(
-				new Uint8Array(message.content.Image).reduce(
-					(data, byte) => data + String.fromCharCode(byte),
-					''
-				)
-			);
-
-			return {
-				id: message.id,
-				user: message.user,
-				content: {
-					kind: 'Image',
-					Image: base64
-				}
-			};
-		} else if (isFileVariant(message.content)) {
-			const base64 = btoa(
-				new Uint8Array(message.content.File[1]).reduce(
-					(data, byte) => data + String.fromCharCode(byte),
-					''
-				)
-			);
-
-			return {
-				id: message.id,
-				user: message.user,
-				content: {
-					kind: 'File',
-					File: [message.content.File[0], base64] as const
-				}
-			};
-		} else if (isTextVariant(message.content)) {
-			return {
-				id: message.id,
-				user: message.user,
-				content: {
-					kind: 'Text',
-					Text: message.content.Text
-				}
-			};
-		} else {
-			console.log('unknown message type', message);
-			return {
-				id: message.id,
-				user: message.user,
-				content: {
-					kind: 'Text',
-					Text: 'Unknown message type'
-				}
-			};
-		}
-	};
 
 	const connect = (address: string) => {
 		ws = connectWebsocket(
@@ -87,10 +30,12 @@
 				console.log(serverResponse);
 
 				if (isMessageServerResponse(serverResponse)) {
-					messages = [...messages, serverResponse.Message];
+					messages = [...messages, processMessage(serverResponse.Message)];
 				} else {
-					authToken = serverResponse.AuthToken;
+					authToken = serverResponse.Auth.token;
 					Cookies.set('authToken', authToken, { expires: 1 });
+
+					ws?.send(JSON.stringify({ ReadRequest: { jwt: authToken, amount: 10, offset: 0 } }));
 				}
 			},
 			() => {

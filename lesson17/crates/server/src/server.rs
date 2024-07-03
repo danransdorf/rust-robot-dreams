@@ -13,6 +13,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::{accept_async, tungstenite::Message};
+use utils::db::structs::User;
 
 use futures_util::{SinkExt, StreamExt};
 use utils::db::DB;
@@ -20,7 +21,7 @@ use utils::errors::{
     handle_stream_error, invalid_credentials, invalid_token, username_used, StreamError,
 };
 use utils::{
-    auth_token, db_error, error, message, server_error, AuthRequest, AuthRequestKind,
+    auth, db_error, error, message, server_error, Auth, AuthRequest, AuthRequestKind,
     MessageRequest, MessageResponse, ServerResponse,
 };
 use utils::{deserialize_stream, StreamRequest};
@@ -156,7 +157,9 @@ pub async fn start_server(address: String) {
                             }
                         },
                         StreamRequest::ReadRequest(read_request) => {
-                            let messages = db_clone.read_history(read_request.amount).unwrap();
+                            let messages = db_clone
+                                .read_history(read_request.amount, read_request.offset)
+                                .unwrap();
                             for message_obj in messages {
                                 let message_response_res =
                                     MessageResponse::from_db_message(&message_obj, &db_clone);
@@ -192,7 +195,10 @@ pub async fn start_server(address: String) {
 ///
 /// * `writer` - The writer to write into
 /// * `content` - The content to write
-async fn write_into_stream(writer: &Arc<Mutex<WSWriter>>, content: String) -> Result<(), tokio_tungstenite::tungstenite::Error> {
+async fn write_into_stream(
+    writer: &Arc<Mutex<WSWriter>>,
+    content: String,
+) -> Result<(), tokio_tungstenite::tungstenite::Error> {
     let mut locked_writer = writer.lock().await;
     locked_writer.send(Message::Text(content)).await?;
 
@@ -246,7 +252,7 @@ async fn handle_stream(reader: &Arc<Mutex<WSReader>>) -> Result<StreamRequest, S
         Some(Ok(Message::Text(data))) => data,
         _ => return Err(StreamError::StreamClosed),
     };
-/*     locked_reader
+    /*     locked_reader
         .read_exact(&mut len_buffer)
         .await
         .map_err(|_| StreamError::StreamClosed)?;
@@ -300,7 +306,13 @@ fn handle_login(
             .get_token(jwt_secret)
             .unwrap();
 
-        spawn_write_task(&writer, auth_token(token.clone()));
+        let auth_obj = Auth {
+            token: token.clone(),
+            username: auth_request.username,
+            user_id,
+        };
+
+        spawn_write_task(&writer, auth(auth_obj));
 
         return Some(token);
     }
@@ -330,7 +342,13 @@ fn handle_register(
                 .get_token(jwt_secret)
                 .unwrap();
 
-            spawn_write_task(&writer, auth_token(token.clone()));
+            let auth_obj = Auth {
+                token: token.clone(),
+                username: new_user.username,
+                user_id: new_user.id.unwrap(),
+            };
+
+            spawn_write_task(&writer, auth(auth_obj));
 
             Some(token)
         }

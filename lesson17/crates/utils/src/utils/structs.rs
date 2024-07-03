@@ -3,10 +3,7 @@ use std::io::stdin;
 use init_macros::create_valueenum_init_functions;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    db::structs::User,
-    errors::{DBError, ServerError},
-};
+use crate::errors::{DBError, ServerError};
 
 /// Represents the content of a chat message.
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -35,7 +32,8 @@ pub fn text(text: String) -> MessageContent {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MessageResponse {
     pub id: i32,
-    pub user: User,
+    pub username: String,
+    pub user_id: i32,
     pub content: MessageContent,
 }
 
@@ -48,18 +46,25 @@ pub enum ErrorResponse {
 // Create shorter inits like pub fn db_error(db_error) => ErrorResponse::DBError(db_error)
 create_valueenum_init_functions!(ErrorResponse, DBError(DBError), ServerError(ServerError));
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Auth {
+    pub token: String,
+    pub username: String,
+    pub user_id: i32,
+}
+
 /// Represents a response coming from the server
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ServerResponse {
     Message(MessageResponse),
-    AuthToken(String),
+    Auth(Auth),
     Error(ErrorResponse),
 }
 // Create shorter inits like pub fn message(message_response) => ServerResponse::Message(message_response)
 create_valueenum_init_functions!(
     ServerResponse,
     Message(MessageResponse),
-    AuthToken(String),
+    Auth(Auth),
     Error(ErrorResponse)
 );
 
@@ -130,6 +135,7 @@ impl AuthRequest {
 pub struct ReadRequest {
     pub jwt: String,
     pub amount: i32,
+    pub offset: i32,
 }
 
 /// Represents a request to the server

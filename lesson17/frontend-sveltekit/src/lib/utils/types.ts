@@ -1,3 +1,5 @@
+import type { processMessage } from '.';
+
 type Vec<T> = Array<T>;
 type Option<T> = T | null;
 
@@ -10,30 +12,33 @@ export function isImageVariant(obj: MessageContent): obj is ImageVariant {
 export function isFileVariant(obj: MessageContent): obj is FileVariant {
 	return (obj as FileVariant).File !== undefined;
 }
-export function isTextVariant(obj: MessageContent): obj is { Text: string } {
-	return (obj as { Text: string }).Text !== undefined;
+export function isTextVariant(obj: MessageContent): obj is TextVariant {
+	return (obj as TextVariant).Text !== undefined;
 }
-export type MessageContent =
-	| ImageVariant
-	| FileVariant
-	| { Text: string };
+export type MessageContent = ImageVariant | FileVariant | TextVariant;
 
-export interface User {
+export type User = {
 	//** Option<i32> */
 	id: Option<number>;
 	username: string;
 	password: string;
 	//** Vec<u8> */
 	salt: Vec<number>;
-}
+};
 
-export interface MessageResponse {
+export type MessageResponse = {
 	id: number;
-	user: User;
+	username: string;
+	user_id: number;
 	content: MessageContent;
-}
+};
+export type Auth = {
+	token: string;
+	username: string;
+	user_id: number;
+};
 
-export type AuthServerResponse = { AuthToken: string };
+export type AuthServerResponse = { Auth: Auth };
 export type MessageServerResponse = { Message: MessageResponse };
 export function isMessageServerResponse(obj: ServerResponse): obj is MessageServerResponse {
 	return (obj as MessageServerResponse).Message !== undefined;
@@ -41,21 +46,24 @@ export function isMessageServerResponse(obj: ServerResponse): obj is MessageServ
 
 export type ServerResponse = AuthServerResponse | MessageServerResponse;
 
-export interface MessageRequest {
+export type MessageRequest = {
 	jwt: string;
 	message: MessageContent;
-}
+};
 export type AuthRequestKind = 'Login' | 'Register';
-export interface AuthRequest {
+export type AuthRequest = {
 	kind: AuthRequestKind;
 	username: string;
 	password: string;
-}
-export interface ReadRequest {
+};
+export type ReadRequest = {
 	jwt: string;
 	amount: number;
-}
+  offset: number;
+};
 export type StreamRequest =
 	| { MessageRequest: MessageRequest }
 	| { AuthRequest: AuthRequest }
 	| { ReadRequest: ReadRequest };
+
+export type ProcessedMessage = ReturnType<typeof processMessage>;

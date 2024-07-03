@@ -131,12 +131,13 @@ impl DB {
     ///
     /// # Arguments
     /// * `amount` - The number of messages to read
-    pub fn read_history(&self, amount: i32) -> Result<Vec<Message>> {
+    pub fn read_history(&self, amount: i32, offset: i32) -> Result<Vec<Message>> {
         use schema::messages::dsl::{id as id_field, messages as messages_table};
 
         let mut conn = self.pool.get().map_err(|_| DBError::ConnectionError)?;
         let messages: Vec<Message> = messages_table
             .order(id_field.desc())
+            .offset(offset as i64)
             .limit(amount as i64)
             .order(id_field.asc())
             .load(&mut conn)
