@@ -12,6 +12,5 @@ path = "src/server.rs"
 [dependencies]
 tokio = { version = "1.37.0", features = ["full"] }
 utils = { path = "./crates/utils" }
-client = { path = "./crates/client" }
 server = { path = "./crates/server" }
 yew = { git = "https://github.com/yewstack/yew/", features = ["csr"] }

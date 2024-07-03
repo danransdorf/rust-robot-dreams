@@ -52,7 +52,7 @@ fn write_into_stream(mut stream: &TcpStream, content: &[u8]) -> std::io::Result<
 /// * `stream` - The stream to write into
 /// * `request` - The request object to serialize and write
 pub fn serialize_and_write(stream: &TcpStream, request: StreamRequest) -> std::io::Result<()> {
-    let serialized_string = match serialize_stream(request) {
+    let serialized_string = match bincode::serialize(&request) {
         Ok(string) => string,
         _ => {
             return Err(invalid_input_error("Unable to serialize the request"));

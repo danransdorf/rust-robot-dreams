@@ -1,7 +1,7 @@
 <script>
-	import '../app.css';
+  import "../main.scss"
 </script>
 
-<div class="p-6">
+<main class="container">
 	<slot />
-</div>
+</main>

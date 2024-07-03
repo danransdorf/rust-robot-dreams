@@ -15,7 +15,7 @@ mod structs;
 pub use structs::*;
 
 impl ServerResponse {
-    pub fn serialize(self) -> Vec<u8> {
+    pub fn serialize(self) -> String {
         serialize_server_response(self).unwrap()
     }
 }
@@ -61,18 +61,18 @@ pub fn deserialize_data(data: Vec<u8>) -> Result<MessageContent, bincode::Error>
     bincode::deserialize(&data)
 }
 
-pub fn serialize_server_response(data: ServerResponse) -> Result<Vec<u8>, bincode::Error> {
-    bincode::serialize(&data)
+pub fn serialize_server_response(data: ServerResponse) -> Result<String, serde_json::Error> {
+    serde_json::to_string(&data)
 }
-pub fn deserialize_server_response(data: Vec<u8>) -> Result<ServerResponse, bincode::Error> {
-    bincode::deserialize(&data)
+pub fn deserialize_server_response(data: String) -> Result<ServerResponse, serde_json::Error> {
+    serde_json::from_str(&data)
 }
 
-pub fn serialize_stream(stream: StreamRequest) -> Result<Vec<u8>, bincode::Error> {
-    bincode::serialize(&stream)
+pub fn serialize_stream(request: StreamRequest) -> Result<String, serde_json::Error> {
+    serde_json::to_string(&request)
 }
-pub fn deserialize_stream(stream: Vec<u8>) -> Result<StreamRequest, bincode::Error> {
-    bincode::deserialize(&stream)
+pub fn deserialize_stream(string: String) -> Result<StreamRequest, serde_json::Error> {
+    serde_json::from_str(&string)
 }
 
 static SECONDS_INDEX: usize = 19;

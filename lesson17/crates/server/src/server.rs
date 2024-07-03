@@ -100,7 +100,7 @@ pub async fn start_server(address: String) {
     let clients: Arc<Mutex<HashMap<SocketAddr, Client>>> = Arc::new(Mutex::new(HashMap::new()));
     loop {
         let (stream, client_addr) = listener.accept().await.unwrap();
-        let mut ws_stream = accept_async(stream).await.expect("Failed to accept");
+        let ws_stream = accept_async(stream).await.expect("Failed to accept");
         let (wr, rd) = ws_stream.split();
 
         let reader = Arc::new(Mutex::new(rd));
@@ -192,9 +192,9 @@ pub async fn start_server(address: String) {
 ///
 /// * `writer` - The writer to write into
 /// * `content` - The content to write
-async fn write_into_stream(writer: &Arc<Mutex<WSWriter>>, content: Vec<u8>) -> Result<(), tokio_tungstenite::tungstenite::Error> {
+async fn write_into_stream(writer: &Arc<Mutex<WSWriter>>, content: String) -> Result<(), tokio_tungstenite::tungstenite::Error> {
     let mut locked_writer = writer.lock().await;
-    locked_writer.send(Message::Binary(content)).await?;
+    locked_writer.send(Message::Text(content)).await?;
 
     Ok(())
 }
@@ -238,9 +238,12 @@ fn spawn_write_task(writer: &Arc<Mutex<WSWriter>>, response: ServerResponse) {
 async fn handle_stream(reader: &Arc<Mutex<WSReader>>) -> Result<StreamRequest, StreamError> {
     let mut locked_reader = reader.lock().await;
 
+    let received = locked_reader.next().await;
 
-    let received = match locked_reader.next().await {
-        Some(Ok(Message::Binary(data))) => data,
+    println!("{:?}", received);
+
+    let received = match received {
+        Some(Ok(Message::Text(data))) => data,
         _ => return Err(StreamError::StreamClosed),
     };
 /*     locked_reader
