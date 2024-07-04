@@ -1,11 +1,48 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Chat Client</title>
-   
-  </head>
-  <body>
-    
-  </body>
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="./favicon.png" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		
+		<link href="./_app/immutable/assets/0.BNwyQf6R.css" rel="stylesheet">
+		<link rel="modulepreload" href="./_app/immutable/entry/start.CK-1l_PB.js">
+		<link rel="modulepreload" href="./_app/immutable/chunks/entry.hQWnAVDG.js">
+		<link rel="modulepreload" href="./_app/immutable/chunks/scheduler.Dv2ooU3e.js">
+		<link rel="modulepreload" href="./_app/immutable/chunks/index.BfJRF2fs.js">
+		<link rel="modulepreload" href="./_app/immutable/entry/app.CdBKxRIy.js">
+		<link rel="modulepreload" href="./_app/immutable/chunks/index.4KFJALzH.js">
+		<link rel="modulepreload" href="./_app/immutable/nodes/0.CAYaj9gv.js">
+		<link rel="modulepreload" href="./_app/immutable/nodes/2.Oc9W39Ru.js">
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">  <main class="py-32 max-w-2xl m-auto space-y-6"><h1 class="text-4xl" data-svelte-h="svelte-vxwq0o">Chat Client</h1> <main><div class="space-y-2"><label data-melt-label="" data-label-root="" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70" for="address">Address
+
+		<input class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" name="address" placeholder="ws://localhost:11111" value=""></label>  <button type="button" tabindex="0" class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2" data-button-root="">Connect</button></div></main></main> 
+			
+			<script>
+				{
+					__sveltekit_1ccuh98 = {
+						base: new URL(".", location).pathname.slice(0, -1)
+					};
+
+					const element = document.currentScript.parentElement;
+
+					const data = [null,null];
+
+					Promise.all([
+						import("./_app/immutable/entry/start.CK-1l_PB.js"),
+						import("./_app/immutable/entry/app.CdBKxRIy.js")
+					]).then(([kit, app]) => {
+						kit.start(app, element, {
+							node_ids: [0, 2],
+							data,
+							form: null,
+							error: null
+						});
+					});
+				}
+			</script>
+		</div>
+	</body>
 </html>
