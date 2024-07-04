@@ -139,9 +139,9 @@ impl DB {
             .order(id_field.desc())
             .offset(offset as i64)
             .limit(amount as i64)
-            .order(id_field.asc())
             .load(&mut conn)
-            .map_err(|_| DBError::MessageHistoryError)?;
+            .map_err(|_| DBError::MessageHistoryError)?.iter().rev().cloned().collect();
+
 
         Ok(messages)
     }

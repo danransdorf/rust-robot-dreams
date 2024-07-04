@@ -1,4 +1,4 @@
-import type { processMessage } from '.';
+import type { processMessage } from './index';
 
 type Vec<T> = Array<T>;
 type Option<T> = T | null;

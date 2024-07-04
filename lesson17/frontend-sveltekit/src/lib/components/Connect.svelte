@@ -1,5 +1,8 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
+	import Button from './ui/button/button.svelte';
+	import Input from './ui/input/input.svelte';
+	import Label from './ui/label/label.svelte';
 
 	let address = '';
 
@@ -9,6 +12,11 @@
 	};
 </script>
 
-<label for="address">Address</label>
-<input name="address" bind:value={address} placeholder="ws://localhost:11111" />
-<button on:click={connect}>Connect</button>
+<div class="space-y-2">
+	<Label for="address"
+		>Address
+
+		<Input name="address" bind:value={address} placeholder="ws://localhost:11111" />
+	</Label>
+	<Button on:click={connect}>Connect</Button>
+</div>

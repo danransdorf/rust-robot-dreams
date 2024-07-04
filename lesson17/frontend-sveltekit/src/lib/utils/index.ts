@@ -2,6 +2,7 @@ import { type MessageResponse, isFileVariant, isImageVariant, isTextVariant } fr
 
 export const processMessage = (message: MessageResponse) => {
 	if (isImageVariant(message.content)) {
+    
 		const base64 = btoa(
 			new Uint8Array(message.content.Image).reduce(
 				(data, byte) => data + String.fromCharCode(byte),

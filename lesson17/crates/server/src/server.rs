@@ -164,6 +164,8 @@ pub async fn start_server(address: String) {
                                 let message_response_res =
                                     MessageResponse::from_db_message(&message_obj, &db_clone);
 
+                                println!("{:?}", message_response_res);
+
                                 match message_response_res {
                                     Ok(message_response) => {
                                         await_write_task(&writer, message(message_response)).await;
@@ -229,6 +231,7 @@ fn spawn_write_task(writer: &Arc<Mutex<WSWriter>>, response: ServerResponse) {
     let content = response.serialize();
     let writer = Arc::clone(writer);
     tokio::spawn(async move {
+        println!("Writing...");
         write_into_stream(&writer, content)
             .await
             .map_err(|e| println!("{}", e))
@@ -385,6 +388,8 @@ async fn handle_message_request(
             return;
         }
     };
+
+    println!("incoming: {:?}", message_request.message);
 
     let message_obj = db
         .save_message(user_id, message_request.message.clone())
